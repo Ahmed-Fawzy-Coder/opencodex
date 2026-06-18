@@ -41,8 +41,14 @@ export function saveConfig(config: OcxConfig): void {
 export function getDefaultConfig(): OcxConfig {
   return {
     port: 10100,
-    providers: {},
-    defaultProvider: "",
+    providers: {
+      openai: {
+        adapter: "openai-responses",
+        baseUrl: "https://api.openai.com",
+        apiKey: "${OPENAI_API_KEY}",
+      },
+    },
+    defaultProvider: "openai",
   };
 }
 
