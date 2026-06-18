@@ -140,7 +140,7 @@ async function handleResponses(req: Request, config: OcxConfig, logCtx: { model:
     }
     return new Response(upstreamResponse.body, {
       status: upstreamResponse.status,
-      headers: upstreamResponse.headers,
+      headers: sanitizePassthroughHeaders(upstreamResponse.headers),
     });
   }
 
@@ -202,6 +202,21 @@ const MAX_LOG_SIZE = 200;
 function addRequestLog(entry: typeof requestLog[number]) {
   requestLog.push(entry);
   if (requestLog.length > MAX_LOG_SIZE) requestLog.shift();
+}
+
+/**
+ * Bun's fetch auto-decompresses the response body but leaves the upstream `content-encoding`
+ * (and a now-stale `content-length`) on `response.headers`. Relaying those with the already-decoded
+ * body makes the caller (Codex) double-decode / truncate → "stream error" on every gpt passthrough.
+ * Drop encoding + hop-by-hop headers; relay everything else (content-type, etc.) verbatim.
+ */
+export function sanitizePassthroughHeaders(upstream: Headers): Headers {
+  const DROP = new Set(["content-encoding", "content-length", "transfer-encoding", "connection", "keep-alive"]);
+  const out = new Headers();
+  upstream.forEach((value, key) => {
+    if (!DROP.has(key.toLowerCase())) out.set(key, value);
+  });
+  return out;
 }
 
 function corsHeaders(): Record<string, string> {
