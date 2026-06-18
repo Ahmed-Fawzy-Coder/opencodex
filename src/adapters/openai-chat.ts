@@ -6,7 +6,14 @@ function messagesToChatFormat(parsed: OcxParsedRequest): unknown[] {
   const { context, options } = parsed;
 
   if (context.systemPrompt && context.systemPrompt.length > 0) {
-    out.push({ role: "system", content: context.systemPrompt.join("\n\n") });
+    // Codex sends its GPT-5 identity prompt for EVERY model (the per-model catalog
+    // base_instructions is ignored at request time). Neutralize that one identity line
+    // so routed, non-OpenAI models don't misreport themselves as GPT-5 / OpenAI.
+    const sys = context.systemPrompt.join("\n\n").replace(
+      "You are Codex, a coding agent based on GPT-5.",
+      `You are a coding agent (underlying model: ${parsed.modelId}) running via the opencodex proxy. Do not claim to be GPT-5 or to be made by OpenAI.`,
+    );
+    out.push({ role: "system", content: sys });
   }
 
   for (const msg of context.messages) {
@@ -95,7 +102,13 @@ export function createOpenAIChatAdapter(provider: OcxProviderConfig): ProviderAd
       if (parsed.options.temperature !== undefined) body.temperature = parsed.options.temperature;
       if (parsed.options.topP !== undefined) body.top_p = parsed.options.topP;
       if (parsed.options.stopSequences !== undefined) body.stop = parsed.options.stopSequences;
-      if (parsed.options.reasoning !== undefined) body.reasoning_effort = parsed.options.reasoning;
+      if (parsed.options.reasoning !== undefined) {
+        // Many OpenAI-compatible providers (e.g. opencode zen / Xiaomi MiMo) only accept
+        // low|medium|high. Clamp Codex's extra tiers so they don't 400 the upstream.
+        const r = parsed.options.reasoning;
+        body.reasoning_effort = (r === "low" || r === "medium" || r === "high")
+          ? r : (r === "minimal" ? "low" : "high");
+      }
       if (parsed.options.presencePenalty !== undefined) body.presence_penalty = parsed.options.presencePenalty;
       if (parsed.options.frequencyPenalty !== undefined) body.frequency_penalty = parsed.options.frequencyPenalty;
 
