@@ -111,6 +111,7 @@ ocx login <xai|anthropic|kimi> # OAuth login
 ocx logout <provider>          # remove a stored login
 ocx gui                        # open the web dashboard
 ocx service <install|start|stop|status|uninstall>   # run as a background service
+ocx update                     # update opencodex to the latest published version
 ```
 
 ## Configuration

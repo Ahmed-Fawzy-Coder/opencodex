@@ -88,6 +88,22 @@ ocx service status
 ocx service uninstall
 ```
 
+## Updating
+
+### `ocx update`
+
+Self-update opencodex to the latest version published on npm, using the package manager it was
+installed with (`bun add -g opencodex@latest` or `npm install -g opencodex@latest`). It detects a
+source checkout and tells you to `git pull && bun install` instead, and is a no-op if you're already
+on the newest version. Restart the proxy afterward (`ocx stop && ocx start`) to run the new build.
+
+```bash
+ocx update
+```
+
+New versions become available the moment the [Release workflow](https://github.com/lidge-jun/opencodex/actions/workflows/release.yml)
+publishes them to npm.
+
 ## Help
 
 `ocx help`, `ocx --help`, `ocx -h` — print usage and examples.

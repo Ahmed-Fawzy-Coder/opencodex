@@ -21,6 +21,7 @@ Usage:
   ocx status                  Check proxy server status
   ocx login <provider>        OAuth login (xai) — opens browser, stores token in ~/.opencodex/auth.json
   ocx logout <provider>       Remove a stored OAuth login
+  ocx update                  Update opencodex to the latest published version
   ocx help                    Show this help message
 
 Examples:
@@ -164,6 +165,11 @@ switch (command) {
   case "service":
     serviceCommand(args[1]);
     break;
+  case "update": {
+    const { runUpdate } = await import("./update");
+    runUpdate();
+    break;
+  }
   case "help":
   case "--help":
   case "-h":
