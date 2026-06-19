@@ -22,6 +22,7 @@ function buildProviderTableBlock(port: number): string {
     'name = "OpenCodex Proxy"',
     `base_url = "http://localhost:${port}/v1"`,
     'wire_api = "responses"',
+    "requires_openai_auth = true",
   ];
   return lines.join("\n") + "\n";
 }
