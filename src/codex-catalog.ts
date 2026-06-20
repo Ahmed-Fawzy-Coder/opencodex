@@ -57,6 +57,12 @@ function readCatalog(path: string): { models?: RawEntry[]; [k: string]: unknown 
   } catch { return null; }
 }
 
+function findNativeTemplate(catalog: { models?: RawEntry[] } | null): RawEntry | null {
+  return catalog?.models?.find(
+    m => typeof m.slug === "string" && !m.slug.includes("/") && "base_instructions" in m,
+  ) ?? null;
+}
+
 function normalizeServiceTiers(entry: RawEntry): RawEntry {
   // Codex stores the user-facing config spelling as "fast", but the catalog/request
   // service tier id is "priority" in current codex-rs. Keep legacy catalogs working.
@@ -83,6 +89,28 @@ function ensureAutoCompactTokenLimit(entry: RawEntry): RawEntry {
   return entry;
 }
 
+function ensureStrictCatalogFields(entry: RawEntry): RawEntry {
+  if (typeof entry.supports_reasoning_summaries !== "boolean") entry.supports_reasoning_summaries = true;
+  if (typeof entry.default_reasoning_summary !== "string") entry.default_reasoning_summary = "none";
+  if (typeof entry.support_verbosity !== "boolean") entry.support_verbosity = true;
+  if (typeof entry.default_verbosity !== "string") entry.default_verbosity = "low";
+  if (typeof entry.apply_patch_tool_type !== "string") entry.apply_patch_tool_type = "freeform";
+  if (!entry.truncation_policy || typeof entry.truncation_policy !== "object" || Array.isArray(entry.truncation_policy)) {
+    entry.truncation_policy = { mode: "tokens", limit: 10000 };
+  }
+  if (typeof entry.supports_parallel_tool_calls !== "boolean") entry.supports_parallel_tool_calls = true;
+  if (typeof entry.supports_image_detail_original !== "boolean") entry.supports_image_detail_original = false;
+  if (!Array.isArray(entry.experimental_supported_tools)) entry.experimental_supported_tools = [];
+  if (!Array.isArray(entry.input_modalities)) entry.input_modalities = ["text"];
+  if (typeof entry.context_window !== "number" || entry.context_window <= 0) entry.context_window = 128000;
+  if (typeof entry.max_context_window !== "number" || entry.max_context_window <= 0) {
+    entry.max_context_window = entry.context_window;
+  }
+  if (typeof entry.effective_context_window_percent !== "number") entry.effective_context_window_percent = 95;
+  if (typeof entry.comp_hash !== "string") entry.comp_hash = "opencodex";
+  return ensureAutoCompactTokenLimit(entry);
+}
+
 export function normalizeRoutedCatalogEntry(entry: RawEntry): RawEntry {
   delete entry.model_messages;
   delete entry.tool_mode;
@@ -97,7 +125,7 @@ export function normalizeRoutedCatalogEntry(entry: RawEntry): RawEntry {
   // runs through native gpt-5.4-mini, so image search is available and verbalized for text-only models.
   entry.web_search_tool_type = "text_and_image";
   entry.supports_search_tool = true;
-  return ensureAutoCompactTokenLimit(entry);
+  return ensureStrictCatalogFields(entry);
 }
 
 function applyJawcodeCatalogMetadata(entry: RawEntry, slug: string): void {
@@ -122,8 +150,8 @@ function applyJawcodeCatalogMetadata(entry: RawEntry, slug: string): void {
 
 function loadCatalogForSync(path: string): { models?: RawEntry[]; [k: string]: unknown } | null {
   const catalog = readCatalog(path);
-  if (catalog) return catalog;
-  return readCatalog(CODEX_MODELS_CACHE_PATH);
+  if (catalog && findNativeTemplate(catalog)) return catalog;
+  return readCatalog(CATALOG_BACKUP_PATH) ?? readCatalog(CODEX_MODELS_CACHE_PATH) ?? catalog;
 }
 
 function readCurrentCatalogOrCache(): { models?: RawEntry[]; [k: string]: unknown } | null {
@@ -136,10 +164,9 @@ function readCurrentCatalogOrCache(): { models?: RawEntry[]; [k: string]: unknow
  * Returns a deep copy, or null if no catalog/native entry exists.
  */
 export function loadCatalogTemplate(): RawEntry | null {
-  const cat = readCurrentCatalogOrCache();
-  const native = cat?.models?.find(
-    m => typeof m.slug === "string" && !m.slug.includes("/") && "base_instructions" in m,
-  );
+  const native = findNativeTemplate(readCatalog(readCodexCatalogPath()))
+    ?? findNativeTemplate(readCatalog(CATALOG_BACKUP_PATH))
+    ?? findNativeTemplate(readCatalog(CODEX_MODELS_CACHE_PATH));
   return native ? JSON.parse(JSON.stringify(native)) : null;
 }
 
@@ -186,7 +213,7 @@ function deriveEntry(template: RawEntry | null, slug: string, desc: string, prio
       normalizeRoutedCatalogEntry(e);
       applyJawcodeCatalogMetadata(e, slug);
     }
-    return ensureAutoCompactTokenLimit(normalizeServiceTiers(e));
+    return ensureStrictCatalogFields(normalizeServiceTiers(e));
   }
   // Fallback when no template is available (best-effort; strict parser may need more).
   const entry: RawEntry = {
@@ -198,7 +225,7 @@ function deriveEntry(template: RawEntry | null, slug: string, desc: string, prio
     ...(slug.includes("/") ? { web_search_tool_type: "text_and_image", supports_search_tool: true } : {}),
   };
   applyJawcodeCatalogMetadata(entry, slug);
-  return ensureAutoCompactTokenLimit(normalizeServiceTiers(entry));
+  return ensureStrictCatalogFields(normalizeServiceTiers(entry));
 }
 
 /**
@@ -351,9 +378,7 @@ export async function syncCatalogModels(config: OcxConfig): Promise<{ added: num
   const catalog = loadCatalogForSync(catalogPath);
   if (!catalog) return { added: 0, path: catalogPath };
 
-  const template = (catalog.models ?? []).find(
-    m => typeof m.slug === "string" && !m.slug.includes("/") && "base_instructions" in m,
-  ) ?? null;
+  const template = findNativeTemplate(catalog);
 
   const goModels = await gatherRoutedModels(config);
   if (goModels.length === 0) return { added: 0, path: catalogPath };
@@ -383,7 +408,7 @@ export async function syncCatalogModels(config: OcxConfig): Promise<{ added: num
   // native template can never leak supports_websockets while the flag is off.
   const wsEnabled = websocketsEnabled(config);
   catalog.models = [...native, ...goEntries].map(m => {
-    const e = ensureAutoCompactTokenLimit(normalizeServiceTiers(m));
+    const e = ensureStrictCatalogFields(normalizeServiceTiers(m));
     if (wsEnabled) e.supports_websockets = true;
     else delete e.supports_websockets;
     return e;

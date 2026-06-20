@@ -203,16 +203,18 @@ describe("Codex catalog routed normalization", () => {
     expect(routed?.input_modalities).toEqual(["text", "image"]);
   });
 
-  test("unknown routed entries do not guess jawcode metadata", () => {
+  test("unknown routed entries receive conservative strict catalog defaults", () => {
     const entries = buildCatalogEntries(null, [], [
       { provider: "local", id: "qwen3-coder" },
     ]);
     const routed = entries.find(e => e.slug === "local/qwen3-coder");
 
-    expect(routed).not.toHaveProperty("context_window");
-    expect(routed).not.toHaveProperty("max_context_window");
-    expect(routed).not.toHaveProperty("auto_compact_token_limit");
-    expect(routed).not.toHaveProperty("input_modalities");
+    expect(routed?.context_window).toBe(128_000);
+    expect(routed?.max_context_window).toBe(128_000);
+    expect(routed?.auto_compact_token_limit).toBe(115_200);
+    expect(routed?.input_modalities).toEqual(["text"]);
+    expect(routed?.supports_reasoning_summaries).toBe(true);
+    expect(routed?.default_reasoning_summary).toBe("none");
   });
 
   test("generated jawcode snapshot is restricted to mapped providers", () => {

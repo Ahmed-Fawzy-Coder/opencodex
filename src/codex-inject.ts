@@ -143,12 +143,16 @@ function ensureFastModeFeature(content: string): string {
   return lines.join("\n");
 }
 
-function stripDefaultCatalogPath(content: string): string {
+function isOpencodexCatalogPath(path: string): boolean {
+  return path.replace(/\\/g, "/").split("/").pop() === "opencodex-catalog.json";
+}
+
+function stripOpencodexCatalogPath(content: string): string {
   return content
     .split("\n")
     .filter(line => {
       const m = line.match(/^\s*model_catalog_json\s*=\s*("(?:\\.|[^"])*"|'[^']*')\s*$/);
-      return !m || parseTomlString(m[1]) !== DEFAULT_CATALOG_PATH;
+      return !m || !isOpencodexCatalogPath(parseTomlString(m[1]));
     })
     .join("\n");
 }
@@ -240,7 +244,7 @@ export function stripOpencodexConfig(content: string): string {
   // must match the detection regex above, or a detected line could survive un-removed.
   out = out.split("\n").filter(l => !/^\s*model_provider\s*=\s*"opencodex"\s*$/.test(l)).join("\n");
   out = stripRootContextWindowOverrides(out);
-  out = stripDefaultCatalogPath(out);
+  out = stripOpencodexCatalogPath(out);
   return out.replace(/\n{3,}/g, "\n\n").trimEnd() + "\n";
 }
 
