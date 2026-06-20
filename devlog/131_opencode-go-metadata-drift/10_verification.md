@@ -27,6 +27,8 @@ Verification:
 - `bun --cwd=packages/ai run generate-models` produced `opencode-go: 20 models`.
 - `bun --cwd=packages/ai run check` passed.
 - Custom 20-row comparison against generated `opencode-go` rows returned `bad=0`.
+- GJC PR #914 (`Yeachan-Heo/gajae-code`, base `dev`) CI passed all checks:
+  `gh pr checks 914 --repo Yeachan-Heo/gajae-code` returned 12 passing checks.
 
 GJC needed one extra guard in `model-thinking.ts`: the global `minimax-m3` 1M policy now excludes
 `provider === "opencode-go"`, because OpenCode Go's official `minimax-m3` context is 512000.
