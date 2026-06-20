@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildProviderTableBlock, stripOpencodexConfig } from "../src/codex-inject";
+import { buildProfileFile, buildProviderTableBlock, chooseCatalogPathForInjection, stripOpencodexConfig } from "../src/codex-inject";
 
 describe("Codex config injection", () => {
   test("omits provider-level Responses WebSocket support by default", () => {
@@ -41,5 +41,18 @@ describe("Codex config injection", () => {
     expect(stripped).not.toContain("model_auto_compact_token_limit");
     expect(stripped).not.toContain("model_provider");
     expect(stripped).not.toContain("model_catalog_json");
+  });
+
+  test("can build fallback profile without a model catalog path", () => {
+    const profile = buildProfileFile(10100, null);
+
+    expect(profile).toContain('model_provider = "opencodex"');
+    expect(profile).not.toContain("model_catalog_json");
+  });
+
+  test("honors an explicit unavailable catalog decision", () => {
+    const path = chooseCatalogPathForInjection('model_catalog_json = "/tmp/opencodex-catalog.json"\n', null);
+
+    expect(path).toBeNull();
   });
 });

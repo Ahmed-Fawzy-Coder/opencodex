@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { restoreNativeCodex } from "./codex-inject";
 import { loadConfig, readPid, removePid, writePid } from "./config";
 import { serviceCommand } from "./service";
@@ -35,18 +36,22 @@ Examples:
 async function syncModelsToCodex(port?: number) {
   const config = loadConfig();
   const p = port ?? config.port ?? 10100;
-  const { injectCodexConfig } = await import("./codex-inject");
-  const result = await injectCodexConfig(p, config);
+  let catalogPath: string | null | undefined;
   try {
     const { invalidateCodexModelsCache, syncCatalogModels } = await import("./codex-catalog");
     const cat = await syncCatalogModels(config);
+    catalogPath = existsSync(cat.path) ? cat.path : null;
     if (cat.added > 0) {
       invalidateCodexModelsCache();
       console.log(`   + ${cat.added} models appended to Codex catalog (${cat.path})`);
+    } else if (catalogPath === null) {
+      console.error("catalog sync skipped: no Codex catalog source found; keeping Codex's native catalog.");
     }
   } catch (e) {
     console.error("catalog sync skipped:", e instanceof Error ? e.message : String(e));
   }
+  const { injectCodexConfig } = await import("./codex-inject");
+  const result = await injectCodexConfig(p, config, { catalogPath });
   console.log(result.message);
   return result;
 }

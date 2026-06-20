@@ -1,10 +1,19 @@
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { atomicWriteFile, websocketsEnabled } from "./config";
 import { restoreCodexCatalog } from "./codex-catalog";
-import { CODEX_CONFIG_PATH, CODEX_PROFILE_PATH, DEFAULT_CATALOG_PATH, parseTomlString, readRootTomlString, tomlString } from "./codex-paths";
+import { CODEX_CONFIG_PATH, CODEX_PROFILE_PATH, DEFAULT_CATALOG_PATH, parseTomlString, readRootTomlString, resolveCodexConfigPath, tomlString } from "./codex-paths";
 import type { OcxConfig } from "./types";
 
 const OCX_SECTION_MARKER = "# Auto-injected by opencodex";
+
+export interface InjectCodexOptions {
+  /**
+   * Absolute or CODEX_HOME-relative catalog path to advertise to Codex. Pass `null` only when the
+   * opencodex catalog could not be materialized; Codex will then keep its native catalog instead of
+   * failing on a missing model_catalog_json file.
+   */
+  catalogPath?: string | null;
+}
 
 /**
  * The `[model_providers.opencodex]` TABLE only. A table is position-independent in TOML, so it is
@@ -83,10 +92,20 @@ function readRootModelCatalogPath(content: string): string | null {
 }
 
 function setRootModelCatalogPath(content: string, catalogPath: string): string {
-  if (readRootModelCatalogPath(content)) return content;
   const lines = content.split("\n");
   const firstTable = lines.findIndex(l => /^\s*\[/.test(l));
   const key = `model_catalog_json = ${tomlString(catalogPath)}`;
+  const rootEnd = firstTable === -1 ? lines.length : firstTable;
+  for (let i = 0; i < rootEnd; i++) {
+    const m = lines[i].match(/^\s*model_catalog_json\s*=\s*("(?:\\.|[^"])*"|'[^']*')\s*$/);
+    if (!m) continue;
+    const existing = parseTomlString(m[1]);
+    if (isOpencodexCatalogPath(existing)) {
+      lines[i] = key;
+      return lines.join("\n");
+    }
+    return content;
+  }
   if (firstTable === -1) {
     return content.replace(/\n+$/, "") + "\n" + key + "\n";
   }
@@ -157,20 +176,30 @@ function stripOpencodexCatalogPath(content: string): string {
     .join("\n");
 }
 
-function buildProfileFile(port: number, catalogPath: string): string {
-  return [
+export function buildProfileFile(port: number, catalogPath?: string | null): string {
+  const lines = [
     "# OpenCodex proxy profile — use with: codex --profile opencodex",
     `# Routes all model requests through the opencodex proxy at localhost:${port}`,
     'model_provider = "opencodex"',
-    `model_catalog_json = ${tomlString(catalogPath)}`,
-    "",
-    "[features]",
-    "fast_mode = true",
-    "",
-  ].join("\n");
+  ];
+  if (catalogPath) lines.push(`model_catalog_json = ${tomlString(catalogPath)}`);
+  lines.push("", "[features]", "fast_mode = true", "");
+  return lines.join("\n");
 }
 
-export async function injectCodexConfig(port: number, config?: OcxConfig): Promise<{ success: boolean; message: string }> {
+export function chooseCatalogPathForInjection(content: string, requested?: string | null): string | null {
+  if (requested !== undefined) return requested;
+
+  const existing = readRootModelCatalogPath(content);
+  if (existing) {
+    const resolved = resolveCodexConfigPath(existing);
+    if (!isOpencodexCatalogPath(resolved) || existsSync(resolved)) return existing;
+  }
+
+  return existsSync(DEFAULT_CATALOG_PATH) ? DEFAULT_CATALOG_PATH : null;
+}
+
+export async function injectCodexConfig(port: number, config?: OcxConfig, options: InjectCodexOptions = {}): Promise<{ success: boolean; message: string }> {
   if (!existsSync(CODEX_CONFIG_PATH)) {
     return { success: false, message: `Codex config not found at ${CODEX_CONFIG_PATH}. Is Codex installed?` };
   }
@@ -189,8 +218,8 @@ export async function injectCodexConfig(port: number, config?: OcxConfig): Promi
   content = normalizeServiceTier(content);
   content = ensureFastModeFeature(content);
 
-  const catalogPath = readRootModelCatalogPath(content) ?? DEFAULT_CATALOG_PATH;
-  content = setRootModelCatalogPath(content, catalogPath);
+  const catalogPath = chooseCatalogPathForInjection(content, options.catalogPath);
+  content = catalogPath ? setRootModelCatalogPath(content, catalogPath) : stripOpencodexCatalogPath(content);
 
   // 1) Root key BEFORE the first table header (must be a global, not nested under a table).
   content = setRootModelProvider(content);
@@ -200,9 +229,13 @@ export async function injectCodexConfig(port: number, config?: OcxConfig): Promi
   writeFileSync(CODEX_CONFIG_PATH, content, "utf-8");
   writeFileSync(CODEX_PROFILE_PATH, buildProfileFile(port, catalogPath), "utf-8");
 
+  const catalogMessage = catalogPath
+    ? `  Codex model catalog: ${catalogPath}\n`
+    : `  Codex model catalog not injected because no opencodex catalog file exists yet.\n`;
   return {
     success: true,
     message: `Injected opencodex as default provider into Codex config.\n` +
+      catalogMessage +
       `  All models now route through opencodex proxy (like OpenRouter).\n` +
       `  OpenAI models (gpt-5.5, etc.) are passed through to OpenAI.\n` +
       `  Custom models route to their configured providers.\n` +
