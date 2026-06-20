@@ -14,12 +14,12 @@ export interface JawcodeModelMetadata {
 const PROVIDER_ALIASES: Record<string, string> = {
   "xai": "xai",
   "anthropic": "anthropic",
+  "kimi": "moonshot",
+  "opencode-go": "opencode-go",
+  "openrouter": "openrouter",
   "google": "google",
   "gemini": "google",
   "moonshot": "moonshot",
-  "kimi": "moonshot",
-  "openrouter": "openrouter",
-  "opencode-go": "opencode-go",
   "minimax": "minimax",
   "minimax-cn": "minimax"
 } as const;
@@ -41,6 +41,21 @@ export function resolveJawcodeProvider(provider: string): string | undefined {
 
 export function getJawcodeModelMetadata(provider: string, modelId: string): JawcodeModelMetadata | undefined {
   const row = DATA[provider]?.find(r => r[0] === modelId);
+  if (!row) return undefined;
+  const [id, contextWindow, maxTokens, input, reasoning, wireModelId] = row;
+  return {
+    provider, id,
+    ...(contextWindow !== undefined ? { contextWindow } : {}),
+    ...(maxTokens !== undefined ? { maxTokens } : {}),
+    ...(input ? { input: input.split(",") as ("text" | "image")[] } : {}),
+    ...(reasoning !== undefined ? { reasoning: reasoning === 1 } : {}),
+    ...(wireModelId !== undefined ? { wireModelId } : {}),
+  };
+}
+
+export function getJawcodeModelMetadataCaseInsensitive(provider: string, modelId: string): JawcodeModelMetadata | undefined {
+  const lower = modelId.toLowerCase();
+  const row = DATA[provider]?.find(r => r[0].toLowerCase() === lower);
   if (!row) return undefined;
   const [id, contextWindow, maxTokens, input, reasoning, wireModelId] = row;
   return {

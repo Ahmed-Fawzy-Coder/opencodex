@@ -5,6 +5,7 @@ import { getCredential, saveCredential } from "./store";
 import { loginXai, refreshXaiToken } from "./xai";
 import { ANTHROPIC_OAUTH_BETA, loginAnthropic, refreshAnthropicToken } from "./anthropic";
 import { loginKimi, refreshKimiToken } from "./kimi";
+import { deriveOAuthDefaultModel, deriveOAuthProviderConfig } from "../providers/derive";
 
 const REFRESH_SKEW_MS = 60_000;
 
@@ -16,51 +17,36 @@ interface OAuthProviderDef {
   defaultModel: string;
 }
 
+function oauthConfig(id: string): OcxProviderConfig {
+  const config = deriveOAuthProviderConfig(id);
+  if (!config) throw new Error(`OAuth provider missing from registry: ${id}`);
+  return config;
+}
+
+function oauthDefaultModel(id: string): string {
+  const model = deriveOAuthDefaultModel(id);
+  if (!model) throw new Error(`OAuth provider missing default model in registry: ${id}`);
+  return model;
+}
+
 export const OAUTH_PROVIDERS: Record<string, OAuthProviderDef> = {
   xai: {
     login: (ctrl) => loginXai(ctrl, { importLocal: "fallback" }),
     refresh: refreshXaiToken,
-    providerConfig: {
-      adapter: "openai-chat",
-      baseUrl: "https://api.x.ai/v1",
-      authMode: "oauth",
-      // Real xAI model ids (verified live via GET api.x.ai/v1/models); the proxy also fetches
-      // the live list at sync time, so this is the routing hint / fallback + explicit additions.
-      models: ["grok-4.3", "grok-4.20-0309-reasoning", "grok-4.20-0309-non-reasoning", "grok-build-0.1", "grok-composer-2.5-fast"],
-      defaultModel: "grok-4.3",
-      // These don't accept a reasoning/thinking param — never forward reasoning_effort for them.
-      noReasoningModels: ["grok-build-0.1", "grok-composer-2.5-fast"],
-      // These are text-only (no image input) — the vision sidecar describes images for them.
-      noVisionModels: ["grok-build-0.1", "grok-composer-2.5-fast"],
-    },
-    defaultModel: "grok-4.3",
+    providerConfig: oauthConfig("xai"),
+    defaultModel: oauthDefaultModel("xai"),
   },
   anthropic: {
     login: (ctrl) => loginAnthropic(ctrl, { importLocal: "fallback" }),
     refresh: refreshAnthropicToken,
-    providerConfig: {
-      adapter: "anthropic",
-      baseUrl: "https://api.anthropic.com",
-      authMode: "oauth",
-      // Current dateless flagship ids — routing hint / fallback only; the proxy fetches the live
-      // list from Anthropic's GET /v1/models at sync time (always-latest), so this just seeds a
-      // sane set when that fetch is unavailable.
-      models: ["claude-opus-4-8", "claude-opus-4-7", "claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"],
-      defaultModel: "claude-sonnet-4-6",
-    },
-    defaultModel: "claude-sonnet-4-6",
+    providerConfig: oauthConfig("anthropic"),
+    defaultModel: oauthDefaultModel("anthropic"),
   },
   kimi: {
     login: (ctrl) => loginKimi(ctrl),
     refresh: refreshKimiToken,
-    providerConfig: {
-      adapter: "openai-chat",
-      baseUrl: "https://api.kimi.com/coding/v1",
-      authMode: "oauth",
-      models: ["kimi-k2.6", "kimi-k2.5"],
-      defaultModel: "kimi-k2.6",
-    },
-    defaultModel: "kimi-k2.6",
+    providerConfig: oauthConfig("kimi"),
+    defaultModel: oauthDefaultModel("kimi"),
   },
 };
 

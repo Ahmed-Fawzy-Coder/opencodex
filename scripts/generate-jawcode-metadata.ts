@@ -1,20 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { deriveJawcodeAliases } from "../src/providers/derive";
 
-const PROVIDER_ALIASES = {
-  xai: "xai",
-  anthropic: "anthropic",
-  google: "google",
-  gemini: "google",
-  moonshot: "moonshot",
-  kimi: "moonshot",
-  openrouter: "openrouter",
-  "opencode-go": "opencode-go",
-  // minimax / minimax-cn share the same model lineup; map both to jawcode's `minimax` bundle so the
-  // opencodex catalog providers get bundled metadata (was a metadata-coverage gap → drift bug).
-  minimax: "minimax",
-  "minimax-cn": "minimax",
-} as const;
+const PROVIDER_ALIASES = deriveJawcodeAliases();
 
 type RawModel = {
   id?: string;
@@ -84,6 +72,21 @@ lines.push("}");
 lines.push("");
 lines.push("export function getJawcodeModelMetadata(provider: string, modelId: string): JawcodeModelMetadata | undefined {");
 lines.push("  const row = DATA[provider]?.find(r => r[0] === modelId);");
+lines.push("  if (!row) return undefined;");
+lines.push("  const [id, contextWindow, maxTokens, input, reasoning, wireModelId] = row;");
+lines.push("  return {");
+lines.push("    provider, id,");
+lines.push("    ...(contextWindow !== undefined ? { contextWindow } : {}),");
+lines.push("    ...(maxTokens !== undefined ? { maxTokens } : {}),");
+lines.push("    ...(input ? { input: input.split(\",\") as (\"text\" | \"image\")[] } : {}),");
+lines.push("    ...(reasoning !== undefined ? { reasoning: reasoning === 1 } : {}),");
+lines.push("    ...(wireModelId !== undefined ? { wireModelId } : {}),");
+lines.push("  };");
+lines.push("}");
+lines.push("");
+lines.push("export function getJawcodeModelMetadataCaseInsensitive(provider: string, modelId: string): JawcodeModelMetadata | undefined {");
+lines.push("  const lower = modelId.toLowerCase();");
+lines.push("  const row = DATA[provider]?.find(r => r[0].toLowerCase() === lower);");
 lines.push("  if (!row) return undefined;");
 lines.push("  const [id, contextWindow, maxTokens, input, reasoning, wireModelId] = row;");
 lines.push("  return {");

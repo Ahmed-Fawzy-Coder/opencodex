@@ -104,7 +104,7 @@ codex -m "ollama-cloud/glm-5.2"      "Write a SQL migration"
 | xAI Grok | `openai-chat` | oauth / key |
 | Kimi (Moonshot) | `openai-chat` | oauth / key |
 | Google Gemini | `google` | key |
-| Azure OpenAI | `azure` | key |
+| Azure OpenAI | `azure-openai` | key |
 | Ollama Cloud + 17-provider catalog | `openai-chat` | key |
 | Ollama / vLLM / LM Studio (local) | `openai-chat` | key (usually blank) |
 | Any OpenAI-compatible endpoint | `openai-chat` | key |

@@ -1,8 +1,8 @@
 import * as readline from "node:readline";
 import { injectCodexConfig } from "./codex-inject";
 import { getDefaultConfig, saveConfig } from "./config";
-import { KEY_LOGIN_PROVIDERS, enrichProviderFromCatalog } from "./oauth/key-providers";
-import { OAUTH_PROVIDERS } from "./oauth";
+import { enrichProviderFromCatalog } from "./oauth/key-providers";
+import { deriveInitProviders } from "./providers/derive";
 import type { OcxConfig, OcxProviderConfig } from "./types";
 
 function createPrompt(): { ask(question: string): Promise<string>; close(): void } {
@@ -26,39 +26,12 @@ export interface InitProvider {
   defaultModel?: string;
 }
 
-const OAUTH_LABELS: Record<string, string> = {
-  xai: "xAI (Grok)", anthropic: "Anthropic (Claude)", kimi: "Kimi (Moonshot)",
-};
-
 /**
- * The full CLI provider menu, built from the SAME registries the GUI uses (OAUTH_PROVIDERS +
- * KEY_LOGIN_PROVIDERS) plus the ChatGPT-forward, a few non-catalog key providers, and local servers —
- * so `ocx init` reaches provider parity with the GUI. Exported for verification.
+ * The full CLI provider menu, derived from the canonical provider registry so `ocx init`,
+ * the GUI picker, key-login catalog, OAuth seeds, and metadata aliases cannot drift.
  */
 export function buildInitProviders(): InitProvider[] {
-  const out: InitProvider[] = [];
-  // ChatGPT login (no key) — the default forward provider.
-  out.push({ id: "openai", label: "OpenAI — ChatGPT login (no key)", adapter: "openai-responses", baseUrl: "https://chatgpt.com/backend-api/codex", kind: "forward" });
-  // Real account logins (OAuth).
-  for (const id of Object.keys(OAUTH_PROVIDERS)) {
-    const pc = OAUTH_PROVIDERS[id].providerConfig;
-    out.push({ id, label: `${OAUTH_LABELS[id] ?? id} — account login`, adapter: pc.adapter, baseUrl: pc.baseUrl, kind: "oauth", defaultModel: pc.defaultModel });
-  }
-  // Key providers not in the catalog (native adapters / well-known endpoints).
-  out.push({ id: "openai-apikey", label: "OpenAI (API key)", adapter: "openai-responses", baseUrl: "https://api.openai.com/v1", kind: "key", dashboardUrl: "https://platform.openai.com/api-keys", defaultModel: "gpt-5.5" });
-  out.push({ id: "openrouter", label: "OpenRouter", adapter: "openai-chat", baseUrl: "https://openrouter.ai/api/v1", kind: "key", dashboardUrl: "https://openrouter.ai/keys" });
-  out.push({ id: "groq", label: "Groq", adapter: "openai-chat", baseUrl: "https://api.groq.com/openai/v1", kind: "key", dashboardUrl: "https://console.groq.com/keys" });
-  out.push({ id: "google", label: "Google Gemini", adapter: "google", baseUrl: "https://generativelanguage.googleapis.com", kind: "key", dashboardUrl: "https://aistudio.google.com/apikey", defaultModel: "gemini-3-pro" });
-  out.push({ id: "azure-openai", label: "Azure OpenAI", adapter: "azure", baseUrl: "https://{resource}.openai.azure.com/openai/deployments/{deployment}", kind: "key", dashboardUrl: "https://portal.azure.com" });
-  // The full API-key catalog (deepseek, mistral, kilo, minimax, … — same set the GUI shows).
-  for (const [id, p] of Object.entries(KEY_LOGIN_PROVIDERS)) {
-    out.push({ id, label: p.label, adapter: p.adapter, baseUrl: p.baseUrl, kind: "key", dashboardUrl: p.dashboardUrl, defaultModel: p.defaultModel });
-  }
-  // Local servers (usually no key).
-  out.push({ id: "ollama", label: "Ollama (local)", adapter: "openai-chat", baseUrl: "http://localhost:11434/v1", kind: "local" });
-  out.push({ id: "vllm", label: "vLLM (local)", adapter: "openai-chat", baseUrl: "http://localhost:8000/v1", kind: "local" });
-  out.push({ id: "lm-studio", label: "LM Studio (local)", adapter: "openai-chat", baseUrl: "http://localhost:1234/v1", kind: "local" });
-  return out;
+  return deriveInitProviders();
 }
 
 const KIND_HEADING: Record<InitKind, string> = {

@@ -6,7 +6,8 @@ import { CODEX_CONFIG_PATH, CODEX_MODELS_CACHE_PATH, DEFAULT_CATALOG_PATH, readR
 import { DEFAULT_MODEL_CACHE_TTL_MS, getFreshCached, getStaleCached, setCached } from "./model-cache";
 import { buildModelsRequest, resolveModelsAuthToken } from "./oauth/index";
 import type { OcxConfig, OcxProviderConfig } from "./types";
-import { getJawcodeModelMetadata, resolveJawcodeProvider } from "./generated/jawcode-model-metadata";
+import { getJawcodeModelMetadata, getJawcodeModelMetadataCaseInsensitive, resolveJawcodeProvider } from "./generated/jawcode-model-metadata";
+import { shouldCaseFoldMetadataModelId } from "./providers/derive";
 
 const OCX_DIR = join(homedir(), ".opencodex");
 const CATALOG_BACKUP_PATH = join(OCX_DIR, "catalog-backup.json");
@@ -94,7 +95,8 @@ function applyJawcodeCatalogMetadata(entry: RawEntry, slug: string): void {
   const modelId = slug.slice(slash + 1);
   const jawcodeProvider = resolveJawcodeProvider(provider);
   if (!jawcodeProvider) return;
-  const meta = getJawcodeModelMetadata(jawcodeProvider, modelId);
+  const meta = getJawcodeModelMetadata(jawcodeProvider, modelId)
+    ?? (shouldCaseFoldMetadataModelId(provider) ? getJawcodeModelMetadataCaseInsensitive(jawcodeProvider, modelId) : undefined);
   if (!meta) return;
   if (typeof meta.contextWindow === "number" && meta.contextWindow > 0) {
     entry.context_window = meta.contextWindow;

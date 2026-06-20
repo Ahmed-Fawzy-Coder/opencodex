@@ -21,6 +21,7 @@ import { buildWebSearchTool, planWebSearch, runWithWebSearch } from "./web-searc
 import { describeImagesInPlace, planVisionSidecar } from "./vision";
 import { removeCredential } from "./oauth/store";
 import { enrichProviderFromCatalog, listKeyLoginProviders } from "./oauth/key-providers";
+import { deriveProviderPresets } from "./providers/derive";
 import type { OcxConfig, OcxProviderConfig } from "./types";
 
 const VERSION = "0.0.1";
@@ -69,7 +70,7 @@ function serveGuiFile(pathname: string): Response | null {
   });
 }
 
-function resolveAdapter(providerConfig: OcxProviderConfig) {
+export function resolveAdapter(providerConfig: OcxProviderConfig) {
   switch (providerConfig.adapter) {
     case "openai-chat":
       return createOpenAIChatAdapter(providerConfig);
@@ -79,6 +80,7 @@ function resolveAdapter(providerConfig: OcxProviderConfig) {
       return createResponsesPassthroughAdapter(providerConfig);
     case "google":
       return createGoogleAdapter(providerConfig);
+    case "azure":
     case "azure-openai":
       return createAzureAdapter(providerConfig);
     default:
@@ -414,6 +416,12 @@ async function handleManagementAPI(req: Request, url: URL, config: OcxConfig): P
   // API-key "login" providers (open dashboard → paste key). Drives the GUI's key-provider picker.
   if (url.pathname === "/api/key-providers" && req.method === "GET") {
     return jsonResponse({ providers: listKeyLoginProviders() });
+  }
+
+  // Complete GUI picker presets, derived from the canonical provider registry. The GUI is a
+  // standalone Vite package, so it consumes this runtime view instead of importing repo-root src.
+  if (url.pathname === "/api/provider-presets" && req.method === "GET") {
+    return jsonResponse({ providers: deriveProviderPresets() });
   }
 
   // Subagent model picker: which ≤5 routed models Codex's spawn_agent advertises (it shows the
