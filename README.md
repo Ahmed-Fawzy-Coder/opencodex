@@ -10,9 +10,9 @@
   <img src="assets/architecture.png" alt="opencodex architecture — Codex CLI routes through opencodex proxy to any LLM provider" width="820">
 </p>
 
-Codex only speaks the Responses API (`/v1/responses`). opencodex sits between Codex and your LLM
-provider, translating the protocol on the fly — streaming, tool calls, reasoning, and images included
-— in both directions.
+Use Claude, Gemini, Grok, GLM, DeepSeek, Kimi, Qwen, Ollama, or any other LLM with Codex — without waiting for OpenAI to add support.
+
+opencodex is a lightweight local proxy that translates Codex's Responses API into whatever your provider speaks. Streaming, tool calls, reasoning tokens, images — everything works, in both directions.
 
 ```
 Codex CLI / App / SDK ──/v1/responses──▶ opencodex ──▶ Any provider
@@ -64,30 +64,54 @@ Then re-run `npm install -g @bitkyc08/opencodex`. (The `ocx` binary is bun-nativ
 
 </details>
 
-Target a specific routed model with the `provider/model` form:
+## Add a provider
+
+The fastest way to add a provider is through the web dashboard:
 
 ```bash
-codex -m "anthropic/claude-opus-4-8" "Explain this stack trace"
-codex -m "ollama-cloud/glm-5.2"      "Write a SQL migration"
+ocx gui
 ```
+
+This opens the dashboard at `http://localhost:10100`. From there:
+
+1. Click **"Add Provider"**
+2. Pick from **40+ built-in providers** — or enter a custom OpenAI-compatible endpoint
+3. Paste your API key (or log in via OAuth for Anthropic, xAI, and Kimi)
+4. Models are **auto-discovered** from the provider's `/v1/models` endpoint
+
+Your new provider is ready to use immediately. No restart needed.
+
+You can also add providers through `ocx init` (interactive CLI) or by editing `~/.opencodex/config.json` directly.
+
+## Model routing
+
+Target any configured provider and model using the `provider/model` syntax:
+
+```bash
+# Use Claude Opus through Anthropic
+codex -m "anthropic/claude-opus-4-8" "Explain this stack trace"
+
+# Use Gemini through Google
+codex -m "google/gemini-3-pro" "Write unit tests for auth.ts"
+
+# Use GLM through Ollama Cloud
+codex -m "ollama-cloud/glm-5.2" "Write a SQL migration"
+
+# Use a local model through Ollama
+codex -m "ollama/llama3" "Refactor this function"
+```
+
+When you omit the `provider/` prefix, opencodex routes to the default provider — or auto-matches based on the model name pattern (e.g., `claude-*` routes to Anthropic, `gpt-*` routes to OpenAI).
 
 ## Highlights
 
-- **Five adapters** cover Anthropic Messages, Google Gemini, Azure, the OpenAI Responses passthrough,
-  and **every OpenAI-compatible Chat Completions** endpoint.
-- **OAuth, API key, or ChatGPT forward.** Log in with your xAI / Anthropic / Kimi account (tokens
-  auto-refresh), forward your `codex login`, or paste a key (`${ENV_VARS}` supported). An 18-provider
-  API-key catalog (incl. **Ollama Cloud**) is built in.
-- **Drops into Codex CLI, TUI, App, and SDK.** Injects a `[model_providers.opencodex]` table into
-  `$CODEX_HOME/config.toml` (default `~/.codex/config.toml`) and writes a shared Codex model catalog
-  so routed models appear in Codex model pickers.
-- **Subagent control.** Feature up to five routed or native models in Codex's `spawn_agent` picker
-  from `subagentModels` or the web dashboard.
-- **HTTP/SSE by default, WebSocket opt-in.** The proxy has a Responses WebSocket endpoint, but it
-  only advertises `supports_websockets` when `"websockets": true` is set.
-- **Sidecars.** Give non-OpenAI models real **web search** and **image understanding** via a
-  `gpt-5.4-mini` over your ChatGPT login.
-- **Web dashboard** for providers, OAuth login, model selection, and request logs.
+- **Use any LLM with Codex.** 5 protocol adapters cover Anthropic Messages, Google Gemini, Azure, OpenAI Responses passthrough, and every OpenAI-compatible Chat Completions endpoint — that's 40+ providers out of the box.
+- **Log in once, skip the API key.** OAuth support for xAI, Anthropic, and Kimi means you can authenticate with your existing account. Tokens auto-refresh. Or forward your `codex login`, paste an API key, or use `${ENV_VAR}` references — your call.
+- **Works everywhere Codex does.** Injects into Codex CLI, TUI, App, and SDK automatically. Routed models show up in Codex's model picker just like native ones.
+- **Delegate to the right model.** Feature up to five routed or native models in Codex's subagent picker from the dashboard or config — route complex tasks to a reasoning model, fast tasks to a cheap one.
+- **Give any model superpowers.** Non-OpenAI models get real web search and image understanding via a `gpt-5.4-mini` sidecar over your ChatGPT login.
+- **See what's happening.** The web dashboard shows providers, OAuth status, model selection, and a live request log — no more guessing why a request failed.
+- **Runs in the background.** Install as a system service (launchd / systemd / Task Scheduler) and forget about it. The proxy starts on boot and stays out of your way.
 
 ## Providers & adapters
 
@@ -99,10 +123,12 @@ codex -m "ollama-cloud/glm-5.2"      "Write a SQL migration"
 | xAI Grok | `openai-chat` | oauth / key |
 | Kimi (Moonshot) | `openai-chat` | oauth / key |
 | Google Gemini | `google` | key |
-| Azure OpenAI | `azure` | key |
+| Azure OpenAI | `azure-openai` | key |
 | Ollama Cloud + 17-provider catalog | `openai-chat` | key |
 | Ollama / vLLM / LM Studio (local) | `openai-chat` | key (usually blank) |
 | Any OpenAI-compatible endpoint | `openai-chat` | key |
+
+Plus DeepSeek, Groq, OpenRouter, Together, Fireworks, Cerebras, Mistral, Hugging Face, NVIDIA NIM, MiniMax, Qwen Portal, and more. See the full list with `ocx init` or in the [provider docs](https://lidge-jun.github.io/opencodex/reference/configuration/).
 
 ## CLI
 
@@ -122,7 +148,7 @@ ocx update                     # update opencodex to the latest published versio
 
 ## Configuration
 
-Config lives at `~/.opencodex/config.json`. Minimal example:
+Config lives at `~/.opencodex/config.json`. Here's a typical multi-provider setup:
 
 ```json
 {
@@ -145,20 +171,40 @@ Config lives at `~/.opencodex/config.json`. Minimal example:
 }
 ```
 
-WebSocket transport is off by default. Set `"websockets": true` only if you want Codex to advertise
-and use the Responses WebSocket path instead of HTTP/SSE.
+Local models work too. Point opencodex at any OpenAI-compatible server running on your machine:
 
-See the **[Configuration reference](https://lidge-jun.github.io/opencodex/reference/configuration/)**
-for every field.
+```json
+{
+  "port": 10100,
+  "defaultProvider": "ollama",
+  "providers": {
+    "ollama": {
+      "adapter": "openai-chat",
+      "baseUrl": "http://localhost:11434/v1",
+      "authMode": "key",
+      "apiKey": "",
+      "defaultModel": "llama3"
+    },
+    "vllm": {
+      "adapter": "openai-chat",
+      "baseUrl": "http://localhost:8000/v1",
+      "authMode": "key",
+      "apiKey": "",
+      "defaultModel": "Qwen/Qwen3-32B"
+    }
+  }
+}
+```
+
+WebSocket transport is off by default. Set `"websockets": true` only if you want Codex to advertise and use the Responses WebSocket path instead of HTTP/SSE.
+
+See the **[Configuration reference](https://lidge-jun.github.io/opencodex/reference/configuration/)** for every field.
 
 ## Documentation
 
-The public docs — install, providers, routing, sidecars, Codex integration, Codex App model picker,
-and CLI/config reference — are built from [`docs-site/`](./docs-site) and published to
-**[lidge-jun.github.io/opencodex](https://lidge-jun.github.io/opencodex/)**.
+The public docs — install, providers, routing, sidecars, Codex integration, Codex App model picker, and CLI/config reference — are built from [`docs-site/`](./docs-site) and published to **[lidge-jun.github.io/opencodex](https://lidge-jun.github.io/opencodex/)**.
 
-Maintainer source-of-truth notes live under [`structure/`](./structure). Historical investigations
-remain under [`docs/`](./docs).
+Maintainer source-of-truth notes live under [`structure/`](./structure). Historical investigations remain under [`docs/`](./docs).
 
 ## Development
 

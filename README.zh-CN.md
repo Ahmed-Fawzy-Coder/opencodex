@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/banner.png" alt="opencodex — 使用任意 LLM 的通用代理" width="820">
+  <img src="assets/banner.png" alt="opencodex — 让 Codex 接入任意 LLM" width="820">
 </p>
 
 <p align="center">
@@ -10,9 +10,7 @@
   <img src="assets/architecture.png" alt="opencodex 架构 — Codex CLI 通过 opencodex 代理路由到任意 LLM 提供商" width="820">
 </p>
 
-Codex 只能使用 Responses API（`/v1/responses`）。opencodex 位于 Codex 与你的 LLM
-provider 之间，实时翻译两者之间的协议 —— 包括 streaming、工具调用、推理（reasoning）和图像
-—— 并且是双向的。
+Codex 只认 Responses API（`/v1/responses`）。opencodex 做的事情很简单：架在 Codex 和你的 LLM provider 中间，把协议实时翻译过去——streaming、tool 调用、reasoning、图片，全都覆盖，双向通信。
 
 ```
 Codex CLI / App / SDK ──/v1/responses──▶ opencodex ──▶ Any provider
@@ -21,24 +19,34 @@ Codex CLI / App / SDK ──/v1/responses──▶ opencodex ──▶ Any provi
               OpenRouter · Azure · DeepSeek · GLM · …and OpenAI itself
 ```
 
+## 支持平台
+
+| 操作系统 | 状态 | 服务管理 |
+|---|---|---|
+| macOS (arm64 / x64) | 完整支持 | launchd |
+| Linux (x64 / arm64) | 完整支持 | systemd（用户级） |
+| Windows (x64) | 完整支持 | Task Scheduler |
+
+需要 [Bun](https://bun.sh) 1.1+。三个平台都原生运行（Windows 不需要 WSL）。
+
 ## 快速开始
 
 ```bash
-# Install
-npm install -g @bitkyc08/opencodex      # or: bun install -g @bitkyc08/opencodex
+# 安装
+npm install -g @bitkyc08/opencodex      # 或者: bun install -g @bitkyc08/opencodex
 
-# Interactive setup (writes config + injects into Codex)
+# 交互式初始化（写入配置 + 注入 Codex）
 ocx init
 
-# Start the proxy
+# 启动代理
 ocx start
 
-# Use Codex normally — it now routes through opencodex
+# 正常使用 Codex —— 请求已经通过 opencodex 路由
 codex "Write a hello world in Rust"
 ```
 
 <details>
-<summary><b>没有 <a href="https://bun.sh">bun</a>？</b> —— 先安装它（opencodex 运行在 bun 上）</summary>
+<summary><b>还没装 <a href="https://bun.sh">bun</a>？</b> —— 先装一下（opencodex 跑在 bun 上）</summary>
 
 <br/>
 
@@ -50,37 +58,50 @@ curl -fsSL https://bun.sh/install | bash
 powershell -c "irm bun.sh/install.ps1 | iex"
 ```
 
-然后重新运行 `npm install -g @bitkyc08/opencodex`。（`ocx` 可执行文件是 bun 原生的，因此 bun 必须在你的 `PATH` 中。）
+装完之后重新跑 `npm install -g @bitkyc08/opencodex`。（`ocx` 是 bun 原生二进制，所以 bun 必须在你的 `PATH` 里。）
 
 </details>
 
-使用 `provider/model` 形式指定一个具体的已路由模型：
-
-```bash
-codex -m "anthropic/claude-opus-4-8" "Explain this stack trace"
-codex -m "ollama-cloud/glm-5.2"      "Write a SQL migration"
-```
-
 ## 亮点
 
-- **五种 adapter**，覆盖 Anthropic Messages、Google Gemini、Azure、OpenAI Responses 直通（passthrough），
-  以及**所有 OpenAI 兼容的 Chat Completions** 端点。
-- **OAuth、API key 或 ChatGPT 转发（forward）。** 用你的 xAI / Anthropic / Kimi 账户登录（token
-  自动刷新）、转发你的 `codex login`，或直接粘贴一个 key（支持 `${ENV_VARS}`）。内置一份 18 家 provider 的
-  API-key 目录（含 **Ollama Cloud**）。
-- **无缝接入 Codex CLI、TUI、App 和 SDK。** 向 `$CODEX_HOME/config.toml`（默认 `~/.codex/config.toml`）
-  注入一个 `[model_providers.opencodex]` 表，并写入共享的 Codex 模型目录，让已路由的模型出现在
-  Codex 模型选择器中。
-- **Subagent 控制。** 通过 `subagentModels` 或 Web 仪表盘，将最多 5 个路由或原生模型优先展示在
-  Codex 的 `spawn_agent` 选择器中。
-- **默认 HTTP/SSE，WebSocket 需要显式开启。** 代理有 Responses WebSocket 端点，但只有设置
-  `"websockets": true` 时才会广告 `supports_websockets`。
-- **Sidecars。** 通过基于你 ChatGPT 登录的 `gpt-5.4-mini`，为非 OpenAI 模型提供真正的**网页搜索**和**图像理解**能力。
-- **Web 仪表盘**，用于管理 provider、OAuth 登录、模型选择和请求日志。
+- **一个代理，20+ provider。** Anthropic、Google、xAI、Kimi、Ollama Cloud、Groq、Azure、DeepSeek、OpenRouter……装一次就全通了。
+- **5 种 adapter 覆盖一切。** Anthropic Messages、Google Gemini、Azure、OpenAI Responses 直通，以及**所有 OpenAI 兼容 Chat Completions** 端点——不管你用什么 LLM，总有一个 adapter 能接上。
+- **三种认证方式，随你挑。** OAuth 登录（xAI / Anthropic / Kimi，token 自动刷新）、转发 `codex login`、或直接粘贴 API key（支持 `${ENV_VARS}`）。内置 18 家 provider 的 API key 目录（含 **Ollama Cloud**）。
+- **即插即用 Codex 全家桶。** 自动向 `~/.codex/config.toml` 注入 `[model_providers.opencodex]`，并写入共享模型目录——路由模型直接出现在 Codex 的模型选择器里，CLI、TUI、App、SDK 全部适用。
+- **Subagent 控制。** 在 `subagentModels` 或 Web 仪表盘中，把最多 5 个路由/原生模型置顶到 Codex 的 `spawn_agent` 选择器。
+- **Sidecar 能力加持。** 非 OpenAI 模型也能拥有真正的**网页搜索**和**图片理解**——通过你的 ChatGPT 登录借用一个 `gpt-5.4-mini` 来实现。
+- **Web 仪表盘。** 管理 provider、OAuth 登录、模型选择、请求日志，都在浏览器里完成。
+- **HTTP/SSE 为默认，WebSocket 按需开启。** 只有显式设置 `"websockets": true` 时，代理才会广告 `supports_websockets`。
 
-## Providers 与 adapters
+## 添加 Provider
 
-| Provider | Adapter | Auth |
+最简单的方式：用 Web 仪表盘。
+
+```bash
+ocx gui          # 在浏览器中打开 localhost:10100
+```
+
+仪表盘提供 20+ 内置 provider 模板（Anthropic、Google、xAI、Kimi、Ollama Cloud、Groq、DeepSeek、OpenRouter 等等）。选一个，填入 API key 或用 OAuth 登录，保存即可。opencodex 会自动发现该 provider 支持的模型，并同步到 Codex 的模型选择器中。
+
+如果你更习惯手动配置，直接编辑 `~/.opencodex/config.json`，在 `providers` 对象中添加一项即可。详见下方[配置](#配置)章节。
+
+## 模型路由
+
+通过 `provider/model` 格式指定路由模型，在 Codex 中直接使用：
+
+```bash
+codex -m "anthropic/claude-opus-4-8"   "解释这个 stack trace"
+codex -m "google/gemini-2.5-pro"       "重构这段代码"
+codex -m "xai/grok-4"                  "写一个 SQL migration"
+codex -m "ollama-cloud/glm-5.2"        "生成单元测试"
+codex -m "deepseek/deepseek-r1"        "分析这个性能瓶颈"
+```
+
+不指定 provider 前缀时，Codex 使用你配置的 `defaultProvider` 和 `defaultModel`。
+
+## Provider 与 adapter
+
+| Provider | Adapter | 认证方式 |
 |---|---|---|
 | OpenAI（ChatGPT 登录） | `openai-responses` | 转发（无需 key） |
 | OpenAI（API key） | `openai-responses` | key |
@@ -96,22 +117,24 @@ codex -m "ollama-cloud/glm-5.2"      "Write a SQL migration"
 ## CLI
 
 ```bash
-ocx init                       # interactive setup
-ocx start [--port 10100]       # start the proxy
-ocx stop                       # stop + restore native Codex
-ocx restore                    # restore without stopping (alias: ocx eject)
-ocx sync                       # refresh models + re-inject into Codex
-ocx status                     # is the proxy running?
-ocx login <xai|anthropic|kimi> # OAuth login
-ocx logout <provider>          # remove a stored login
-ocx gui                        # open the web dashboard
-ocx service <install|start|stop|status|uninstall>   # run as a background service
-ocx update                     # update opencodex to the latest published version
+ocx init                       # 交互式初始化
+ocx start [--port 10100]       # 启动代理
+ocx stop                       # 停止并恢复原生 Codex 配置
+ocx restore                    # 仅恢复，不停止（别名：ocx eject）
+ocx sync                       # 刷新模型列表 + 重新注入 Codex
+ocx status                     # 查看代理是否在运行
+ocx login <xai|anthropic|kimi> # OAuth 登录
+ocx logout <provider>          # 移除已保存的登录
+ocx gui                        # 打开 Web 仪表盘
+ocx service <install|start|stop|status|uninstall>   # 后台服务（launchd/systemd/schtasks）
+ocx update                     # 更新到最新版
 ```
 
 ## 配置
 
-配置文件位于 `~/.opencodex/config.json`。最小示例：
+配置文件路径：`~/.opencodex/config.json`。
+
+**云端 provider 示例：**
 
 ```json
 {
@@ -134,18 +157,34 @@ ocx update                     # update opencodex to the latest published versio
 }
 ```
 
-WebSocket 传输默认关闭。只有当你希望 Codex 广告并使用 Responses WebSocket 路径而不是 HTTP/SSE 时，
-才需要设置 `"websockets": true`。
+**本地 provider 示例（Ollama / vLLM / LM Studio）：**
 
-每个字段的说明请参阅 **[配置参考](https://lidge-jun.github.io/opencodex/zh-cn/reference/configuration/)**。
+```json
+{
+  "port": 10100,
+  "defaultProvider": "local",
+  "providers": {
+    "local": {
+      "adapter": "openai-chat",
+      "baseUrl": "http://localhost:11434/v1",
+      "apiKey": "",
+      "defaultModel": "qwen3:32b"
+    }
+  }
+}
+```
+
+本地 provider 的 `apiKey` 通常留空。只要你的本地服务暴露了 OpenAI 兼容的 Chat Completions 端点，opencodex 就能直接对接。
+
+WebSocket 传输默认关闭。只有当你希望 Codex 使用 Responses WebSocket 而不是 HTTP/SSE 时，才需要设置 `"websockets": true`。
+
+每个字段的详细说明参阅 **[配置参考](https://lidge-jun.github.io/opencodex/zh-cn/reference/configuration/)**。
 
 ## 文档
 
-公开文档 —— 安装、providers、路由、sidecars、Codex 集成、Codex App 模型选择器，
-以及 CLI/配置参考 —— 是位于 [`docs-site/`](./docs-site) 下的一个 Astro 站点，
-并发布于 **[lidge-jun.github.io/opencodex](https://lidge-jun.github.io/opencodex/zh-cn/)**。
+完整文档——安装、provider 配置、路由、sidecar、Codex 集成、Codex App 模型选择器、CLI/配置参考——由 [`docs-site/`](./docs-site) 目录下的 Astro 站点构建，发布在 **[lidge-jun.github.io/opencodex](https://lidge-jun.github.io/opencodex/zh-cn/)**。
 
-维护者 source of truth 位于 [`structure/`](./structure)，历史调查/诊断笔记保留在 [`docs/`](./docs)。
+维护者 source of truth 位于 [`structure/`](./structure)，历史调查和诊断笔记保留在 [`docs/`](./docs)。
 
 ## 开发
 
@@ -153,11 +192,11 @@ WebSocket 传输默认关闭。只有当你希望 Codex 广告并使用 Response
 git clone https://github.com/lidge-jun/opencodex.git
 cd opencodex
 bun install
-bun run dev          # start the proxy in dev mode
-bun x tsc --noEmit   # typecheck
+bun run dev          # 以开发模式启动代理
+bun x tsc --noEmit   # 类型检查
 ```
 
-请参阅 **[贡献指南](https://lidge-jun.github.io/opencodex/zh-cn/contributing/)**。
+参阅 **[贡献指南](https://lidge-jun.github.io/opencodex/zh-cn/contributing/)**。
 
 ## 许可证
 
