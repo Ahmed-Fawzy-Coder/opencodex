@@ -1,14 +1,16 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Dashboard from "./pages/Dashboard";
 import Providers from "./pages/Providers";
 import Models from "./pages/Models";
 import Subagents from "./pages/Subagents";
 import Logs from "./pages/Logs";
-import { IconGrid, IconServer, IconBoxes, IconBot, IconList, IconGithub } from "./icons";
+import { IconGrid, IconServer, IconBoxes, IconBot, IconList, IconGithub, IconSun, IconMoon, IconMonitor } from "./icons";
 
 type Page = "dashboard" | "providers" | "models" | "subagents" | "logs";
+type Theme = "light" | "dark" | "system";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "";
+const THEME_KEY = "ocx-theme";
 
 const NAV: { id: Page; label: string; Icon: typeof IconGrid }[] = [
   { id: "dashboard", label: "Dashboard", Icon: IconGrid },
@@ -18,8 +20,27 @@ const NAV: { id: Page; label: string; Icon: typeof IconGrid }[] = [
   { id: "logs", label: "Logs", Icon: IconList },
 ];
 
+const THEME_ICON = { light: IconSun, dark: IconMoon, system: IconMonitor } as const;
+
+function readStoredTheme(): Theme {
+  const t = localStorage.getItem(THEME_KEY);
+  return t === "light" || t === "dark" ? t : "system";
+}
+
 export default function App() {
   const [page, setPage] = useState<Page>("dashboard");
+  const [theme, setTheme] = useState<Theme>(readStoredTheme);
+
+  // Pin color-scheme via [data-theme]; "system" clears it so the OS preference applies (matches the
+  // FOWT guard in index.html). Persisted so the choice survives reloads.
+  useEffect(() => {
+    const el = document.documentElement;
+    if (theme === "system") { el.removeAttribute("data-theme"); localStorage.removeItem(THEME_KEY); }
+    else { el.setAttribute("data-theme", theme); localStorage.setItem(THEME_KEY, theme); }
+  }, [theme]);
+
+  const cycleTheme = () => setTheme(t => (t === "light" ? "dark" : t === "dark" ? "system" : "light"));
+  const ThemeIcon = THEME_ICON[theme];
 
   return (
     <div className="app">
@@ -38,6 +59,10 @@ export default function App() {
           ))}
         </nav>
         <div className="sidebar-foot">
+          <button type="button" className="theme-toggle" onClick={cycleTheme}
+            aria-label={`Theme: ${theme}. Click to switch.`} title={`Theme: ${theme}`}>
+            <ThemeIcon /> <span className="mode">{theme}</span>
+          </button>
           <a className="sidebar-link" href="https://github.com/lidge-jun/opencodex" target="_blank" rel="noreferrer">
             <IconGithub /> GitHub
           </a>

@@ -100,11 +100,11 @@ export default function Dashboard({ apiBase }: { apiBase: string }) {
       {models.length === 0 && !modelsLoading ? (
         <div className="empty">No models found. Check provider API keys.</div>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 10 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(248px, 1fr))", gap: 10 }}>
           {models.map(m => (
-            <div key={`${m.provider}/${m.id}`} className="card" style={{ padding: "11px 14px" }}>
-              <div className="mono" style={{ fontWeight: 600, marginBottom: 3, fontSize: 13 }}>{m.id}</div>
-              <div className="muted" style={{ fontSize: 12 }}>{m.provider}{m.owned_by ? ` · ${m.owned_by}` : ""}</div>
+            <div key={`${m.provider}/${m.id}`} className="model-card">
+              <div className="id">{m.id}</div>
+              <div className="prov">{m.provider}{m.owned_by ? ` · ${m.owned_by}` : ""}</div>
             </div>
           ))}
         </div>
