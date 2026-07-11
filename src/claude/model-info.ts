@@ -92,7 +92,11 @@ function modelInfo(id: string, displayName: string, ladder: readonly string[], i
 }
 
 /** Build the full anthropic-flavor discovery list (ids are Desktop 3P aliases). */
-export function buildAnthropicModelInfos(nativeSlugs: readonly string[], routedModels: readonly CatalogModel[]): AnthropicModelInfo[] {
+export function buildAnthropicModelInfos(
+  nativeSlugs: readonly string[],
+  routedModels: readonly CatalogModel[],
+  aliasForRoute: (provider: string, modelId: string) => string = desktop3pAlias,
+): AnthropicModelInfo[] {
   const out: AnthropicModelInfo[] = [];
   const seen = new Set<string>();
   // [1m] picker variant (devlog 260712 B1): Claude Code accounts exactly 1M for ids
@@ -108,7 +112,7 @@ export function buildAnthropicModelInfos(nativeSlugs: readonly string[], routedM
     out.push({ ...base, id, display_name: `${base.display_name} · 1M`, max_input_tokens: ONE_MILLION });
   };
   for (const slug of nativeSlugs) {
-    const id = desktop3pAlias("native", slug);
+    const id = aliasForRoute("native", slug);
     if (seen.has(id)) continue;
     seen.add(id);
     const info = modelInfo(id, `${slug} (native)`, nativeEffectiveLadder(slug), true);
@@ -116,7 +120,7 @@ export function buildAnthropicModelInfos(nativeSlugs: readonly string[], routedM
     push1mVariant(info, nativeOpenAiContextWindow(slug));
   }
   for (const m of routedModels) {
-    const id = desktop3pAlias(m.provider, m.id);
+    const id = aliasForRoute(m.provider, m.id);
     if (seen.has(id)) continue;
     seen.add(id);
     const ladder = Array.isArray(m.reasoningEfforts) ? m.reasoningEfforts : [];

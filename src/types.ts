@@ -290,6 +290,21 @@ export interface OcxClaudeCodeConfig {
    * both ANTHROPIC_DEFAULT_HAIKU_MODEL and legacy ANTHROPIC_SMALL_FAST_MODEL).
    */
   tierModels?: { opus?: string; sonnet?: string; haiku?: string; fable?: string };
+  /** Persisted Claude Desktop four-family routing profile. */
+  desktopProfile?: OcxClaudeDesktopProfile;
+}
+
+export type OcxClaudeDesktopFamily = "opus" | "fable" | "sonnet" | "haiku";
+
+export interface OcxClaudeDesktopAssignment {
+  family: OcxClaudeDesktopFamily;
+  alias: string;
+}
+
+export interface OcxClaudeDesktopProfile {
+  version: 1;
+  assignments: Record<string, OcxClaudeDesktopAssignment>;
+  defaults: Record<OcxClaudeDesktopFamily, string | null>;
 }
 
 export interface OcxConfig {

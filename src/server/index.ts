@@ -288,13 +288,15 @@ export function startServer(port?: number) {
           || url.searchParams.get("flavor") === "anthropic";
         if (wantsAnthropicList && !url.searchParams.has("client_version")) {
           if (config.claudeCode?.enabled === false) return jsonResponse({ data: [] }, 200, req, config);
-          const { buildAnthropicModelInfos } = await import("../claude/model-info");
-          const data = buildAnthropicModelInfos([...visibleNativeSlugs(config)], goOrdered);
           // Build Desktop 3P registry so inbound alias resolution works for subsequent requests.
           buildDesktop3pRegistry(
             [...visibleNativeSlugs(config)],
             goOrdered.map(m => ({ provider: m.provider, id: m.id, contextWindow: m.contextWindow })),
+            config.claudeCode?.desktopProfile,
           );
+          const { buildAnthropicModelInfos } = await import("../claude/model-info");
+          const { activeDesktop3pAlias } = await import("../claude/desktop-3p");
+          const data = buildAnthropicModelInfos([...visibleNativeSlugs(config)], goOrdered, activeDesktop3pAlias);
           return jsonResponse({ data }, 200, req, config);
         }
         if (url.searchParams.has("client_version")) {
