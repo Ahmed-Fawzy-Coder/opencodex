@@ -42,9 +42,10 @@ function seedPoolAccount(config: OcxConfig, id: string, plan?: string): void {
   });
 }
 
-function whamResponse(weekly: number) {
+function whamResponse(weekly: number, fiveHour: number) {
   return new Response(JSON.stringify({
     rate_limit: {
+      primary_window: { used_percent: fiveHour, reset_at: 1783000000 },
       secondary_window: { used_percent: weekly, reset_at: 1782000000 },
     },
   }), { status: 200, headers: { "Content-Type": "application/json" } });
@@ -83,14 +84,14 @@ describe("primeCodexPoolQuotas", () => {
     const originalFetch = globalThis.fetch;
     try {
       globalThis.fetch = async (input: RequestInfo | URL) => {
-        if (String(input).includes("/backend-api/wham/usage")) return whamResponse(20);
+        if (String(input).includes("/backend-api/wham/usage")) return whamResponse(20, 5);
         return originalFetch(input);
       };
       expect(getAccountQuota("p1")).toBeNull();
       await primeCodexPoolQuotas(config, "test");
       expect(getAccountQuota("p1")).not.toBeNull();
       expect(getAccountQuota("p2")).not.toBeNull();
-      expect(getAccountQuota("p1")).toMatchObject({ weeklyPercent: 20 });
+      expect(getAccountQuota("p1")).toMatchObject({ weeklyPercent: 20, fiveHourPercent: 5 });
     } finally {
       globalThis.fetch = originalFetch;
     }
@@ -107,7 +108,7 @@ describe("primeCodexPoolQuotas", () => {
         if (String(input).includes("/backend-api/wham/usage")) {
           calls += 1;
           await new Promise(r => setTimeout(r, 5));
-          return whamResponse(20);
+          return whamResponse(20, 5);
         }
         return originalFetch(input);
       };
@@ -123,12 +124,12 @@ describe("primeCodexPoolQuotas", () => {
   test("fresh cached quota is skipped (TTL guard)", async () => {
     const config = makeConfig();
     seedPoolAccount(config, "p1");
-    updateAccountQuota("p1", 30); // recent updatedAt
+    updateAccountQuota("p1", 30, 30); // recent updatedAt
     const originalFetch = globalThis.fetch;
     let calls = 0;
     try {
       globalThis.fetch = async (input: RequestInfo | URL) => {
-        if (String(input).includes("/backend-api/wham/usage")) { calls += 1; return whamResponse(99); }
+        if (String(input).includes("/backend-api/wham/usage")) { calls += 1; return whamResponse(99, 99); }
         return originalFetch(input);
       };
       await primeCodexPoolQuotas(config, "test");
@@ -147,7 +148,7 @@ describe("primeCodexPoolQuotas", () => {
     let calls = 0;
     try {
       globalThis.fetch = async (input: RequestInfo | URL) => {
-        if (String(input).includes("/backend-api/wham/usage")) { calls += 1; return whamResponse(20); }
+        if (String(input).includes("/backend-api/wham/usage")) { calls += 1; return whamResponse(20, 5); }
         return originalFetch(input);
       };
       await primeCodexPoolQuotas(config, "test");
@@ -168,7 +169,7 @@ describe("primeCodexPoolQuotas", () => {
         if (String(input).includes("/backend-api/wham/usage")) {
           const auth = (init?.headers as Record<string, string> | undefined)?.Authorization ?? "";
           if (auth.includes("blocked")) throw new Error("network blocked");
-          return whamResponse(20);
+          return whamResponse(20, 5);
         }
         return originalFetch(input);
       };
@@ -190,7 +191,7 @@ describe("primeCodexPoolQuotas", () => {
         if (String(input).includes("/backend-api/wham/usage")) {
           const auth = (init?.headers as Record<string, string> | undefined)?.Authorization ?? "";
           // p1 hot (over threshold), p2 cool -> strict pick should choose p2.
-          return auth.includes("p2") ? whamResponse(10) : whamResponse(90);
+          return auth.includes("p2") ? whamResponse(10, 5) : whamResponse(90, 95);
         }
         return originalFetch(input);
       };
