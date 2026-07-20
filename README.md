@@ -80,6 +80,7 @@ Enable the universal OpenCodex layer globally in `~/.opencodex/config.json`:
 
 ```json
 {
+  "enforceLinuxMcp": true,
   "ultimateContext": {
     "enabled": true,
     "mode": "auto",
@@ -93,7 +94,19 @@ Enable the universal OpenCodex layer globally in `~/.opencodex/config.json`:
 }
 ```
 
+`enforceLinuxMcp` defaults to `true`. For routed non-OpenAI providers, when Codex supplies the
+unified freeform `exec` tool, OpenCodex makes that surface authoritative for local workspace work:
+native read/search/shell tools and `tool_search` are removed, and the model is instructed to call
+`tools.mcp__linux_mcp__workspace` from `exec.ALL_TOOLS`. If `exec` is absent the policy is a no-op,
+so the original tool catalog remains available as a recovery path. Set the option to `false` only
+when intentionally testing the native fallback.
+
 `auto` preserves small results and reduces only results at or above the threshold. `off` is the immediate kill switch. `compact` forces every eligible textual result through the reversible store and is intended for testing, not the global default.
+
+OpenCodex also bounds its in-memory Responses continuation cache to 32 MiB by default and evicts
+least-recently-used chains. Override that process-wide limit only when necessary with
+`OPENCODEX_RESPONSE_STATE_MAX_BYTES=<bytes>`; the disk snapshot remains separately capped and
+oversized histories retain only a self-contained recent suffix with no dangling tool outputs.
 
 Retrieve an omitted snapshot chunk locally:
 
@@ -374,6 +387,22 @@ systemctl --user is-active opencodex-proxy.service
 ```
 
 `ocx doctor` should report a running proxy and no project-local provider bypass. The injected Codex configuration should point `openai_base_url` to `http://127.0.0.1:10100/v1` and use the OpenCodex model catalog. Start a new read-only Codex task and confirm its request appears in OpenCodex Usage; already-open tasks may retain routing state loaded before the configuration changed.
+
+#### Codex reports `ran out of room` while the meter is below the limit
+
+Quit and reopen Codex after upgrading this fork, then start a new task. Older GPT-5.6 catalog
+metadata advertised 372,000 tokens and an effective 353,400-token meter even though the current
+native Codex window is 272,000; that made roughly 60–70% on the old meter close to the real limit
+and delayed compaction until too late. The synchronized entries must now contain:
+
+```bash
+rg -n '"context_window": 272000|"auto_compact_token_limit": 244800' \
+  ~/.codex/opencodex-catalog.json ~/.codex/models_cache.json
+```
+
+If either file still shows 372,000 for GPT-5.6 Sol/Terra/Luna, run `ocx service restart`, wait for
+catalog synchronization, completely quit/reopen Codex, and create a new task. Existing tasks keep
+the context metadata captured when they started.
 
 #### Codex logs `426 Upgrade Required` and falls back to HTTP
 
@@ -732,7 +761,9 @@ Codex-visible context cap, `modelContextWindows` for model-specific caps, and
 `["text", "image"]`. Context values cap live `/models` metadata; they never raise a smaller live
 context window. The bundled GPT-5.6 Sol/Terra/Luna fallback metadata uses a 1,050,000-token context
 window for OpenAI API key and OpenRouter catalog entries; it does not bypass upstream preview
-access. See the configuration reference for the full field list.
+access. Native Codex account entries for GPT-5.6 Sol/Terra/Luna use a 272,000-token raw window and
+compact automatically at 244,800 tokens (90%), leaving headroom for tool schemas, instructions,
+and the next model output. See the configuration reference for the full field list.
 
 > **GLM-5.2 1M context via Z.AI:** through the `openai-chat` adapter, both `glm-5.2`
 > and `glm-5.2[1m]` work — opencodex strips the trailing `[1m]` suffix before

@@ -70,6 +70,7 @@ import { registerTurn, trackStreamLifetime, unregisterTurn } from "./lifecycle";
 import { redactSecretString } from "../lib/redact";
 import { readBoundedResponseBody } from "../lib/bounded-body";
 import { applyUltimateContextInPlace } from "../context-results";
+import { applyLinuxMcpEnforcement } from "./linux-mcp-enforcement";
 import {
   beginRequestAttempt,
   catalogModelSupportsServiceTier,
@@ -848,6 +849,12 @@ export async function handleResponses(
   // Virtual model rewriting: Pro aliases → base model + reasoning.mode="pro".
   // Must run before effort caps/native clamps so the base model gets correct limits.
   applyOpenAiVirtualModel(parsed, route, logCtx);
+
+  // Routed non-OpenAI models receive custom `exec` as a function, while Linux MCP remains nested
+  // inside exec.ALL_TOOLS. When that unified surface is present, make it authoritative: hide flat
+  // native read/search/shell competitors and inject a system-level invocation contract. Unless the
+  // raw exec spec/manifest proves that nested capability, preserve the original catalog for recovery.
+  applyLinuxMcpEnforcement(parsed, route, config.enforceLinuxMcp !== false);
 
   // Fast mode override: when config.fastMode is explicitly set, inject or strip
   // service_tier for OpenAI-routed models. Undefined = passthrough (client decides).

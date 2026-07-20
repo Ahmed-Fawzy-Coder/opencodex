@@ -11,6 +11,7 @@ import {
   flushResponseState,
   previousResponseConversationId,
   rememberResponseState,
+  responseStateStatsForTests,
 } from "../src/responses/state";
 
 describe("Responses previous_response_id state", () => {
@@ -18,10 +19,12 @@ describe("Responses previous_response_id state", () => {
   // touch the real ~/.opencodex.
   let home: string;
   const priorHome = process.env["OPENCODEX_HOME"];
+  const priorStateBudget = process.env["OPENCODEX_RESPONSE_STATE_MAX_BYTES"];
 
   beforeEach(() => {
     home = mkdtempSync(join(tmpdir(), "ocx-state-test-"));
     process.env["OPENCODEX_HOME"] = home;
+    delete process.env["OPENCODEX_RESPONSE_STATE_MAX_BYTES"];
     clearResponseStateMemoryForTests();
   });
 
@@ -30,6 +33,8 @@ describe("Responses previous_response_id state", () => {
     rmSync(home, { recursive: true, force: true });
     if (priorHome === undefined) delete process.env["OPENCODEX_HOME"];
     else process.env["OPENCODEX_HOME"] = priorHome;
+    if (priorStateBudget === undefined) delete process.env["OPENCODEX_RESPONSE_STATE_MAX_BYTES"];
+    else process.env["OPENCODEX_RESPONSE_STATE_MAX_BYTES"] = priorStateBudget;
   });
 
   test("expands later input with stored prior input and output", () => {
@@ -143,6 +148,76 @@ describe("Responses previous_response_id state", () => {
     expect(previousResponseConversationId(first.id as string)).toBe("cursor_conv_9");
   });
 
+  test("reading an entry touches its LRU position and protects it from eviction", () => {
+    for (let index = 0; index < 1_000; index += 1) {
+      rememberResponseState(
+        { input: `input-${index}` },
+        { id: `resp_lru_${index}`, output: [], status: "completed" },
+      );
+    }
+
+    const touched = expandPreviousResponseInput({
+      previous_response_id: "resp_lru_0",
+      input: "touch",
+    }) as { input: Array<{ content?: string }> };
+    expect(touched.input[0]?.content).toBe("input-0");
+
+    rememberResponseState(
+      { input: "new entry" },
+      { id: "resp_lru_1000", output: [], status: "completed" },
+    );
+
+    const protectedRead = expandPreviousResponseInput({
+      previous_response_id: "resp_lru_0",
+      input: "still present",
+    }) as { input: Array<{ content?: string }> };
+    expect(protectedRead.input[0]?.content).toBe("input-0");
+
+    const evictedRead = { previous_response_id: "resp_lru_1", input: "evicted" };
+    expect(expandPreviousResponseInput(evictedRead)).toEqual(evictedRead);
+  });
+
+  test("a later remember and flush persists touched LRU order across reload", () => {
+    for (let index = 0; index < 1_000; index += 1) {
+      rememberResponseState(
+        { input: `input-${index}` },
+        { id: `resp_reload_lru_${index}`, output: [], status: "completed" },
+      );
+    }
+    flushResponseState();
+    const path = join(home, "responses-state.json");
+    const beforeTouch = readFileSync(path, "utf-8");
+
+    expandPreviousResponseInput({ previous_response_id: "resp_reload_lru_0", input: "touch" });
+    flushResponseState();
+    expect(readFileSync(path, "utf-8")).toBe(beforeTouch);
+
+    rememberResponseState(
+      { input: "persist touched order" },
+      { id: "resp_reload_lru_1000", output: [], status: "completed" },
+    );
+    flushResponseState();
+    const persisted = JSON.parse(readFileSync(path, "utf-8")) as { states: [string, unknown][] };
+    expect(persisted.states.slice(-2).map(([id]) => id)).toEqual([
+      "resp_reload_lru_0",
+      "resp_reload_lru_1000",
+    ]);
+
+    clearResponseStateMemoryForTests();
+    rememberResponseState(
+      { input: "post-reload entry" },
+      { id: "resp_reload_lru_1001", output: [], status: "completed" },
+    );
+
+    const protectedRead = expandPreviousResponseInput({
+      previous_response_id: "resp_reload_lru_0",
+      input: "still present after reload",
+    }) as { input: Array<{ content?: string }> };
+    expect(protectedRead.input[0]?.content).toBe("input-0");
+    const evictedRead = { previous_response_id: "resp_reload_lru_2", input: "evicted after reload" };
+    expect(expandPreviousResponseInput(evictedRead)).toEqual(evictedRead);
+  });
+
   test("stale snapshot entries are pruned on load", () => {
     const first = buildResponseJSON([
       { type: "text_delta", text: "old" },
@@ -191,6 +266,137 @@ describe("Responses previous_response_id state", () => {
       input: "next",
     }) as { input: unknown[] };
     expect(expanded.input).toHaveLength(3);
+  });
+
+  test("keeps accumulated response state within its byte budget across 120 turns", () => {
+    process.env["OPENCODEX_RESPONSE_STATE_MAX_BYTES"] = String(16 * 1024);
+    clearResponseStateMemoryForTests();
+    let history: unknown[] = [];
+    let latest: ReturnType<typeof buildResponseJSON> | undefined;
+
+    for (let turn = 0; turn < 120; turn += 1) {
+      latest = buildResponseJSON([
+        { type: "text_delta", text: `answer-${turn}-${"x".repeat(180)}` },
+        { type: "done" },
+      ], "gpt-5.5");
+      const input = [...history, { role: "user", content: `turn-${turn}-${"u".repeat(180)}` }];
+      rememberResponseState({ model: "gpt-5.5", input }, latest);
+      history = [...input, ...(latest.output as unknown[])];
+
+      const stats = responseStateStatsForTests();
+      expect(stats.bytes).toBeLessThanOrEqual(stats.maxBytes);
+    }
+
+    const expanded = expandPreviousResponseInput({
+      model: "gpt-5.5",
+      previous_response_id: latest!.id,
+      input: "newest continuation",
+    }) as { input: unknown[] };
+    expect(expanded.input.at(-1)).toEqual({ role: "user", content: "newest continuation" });
+    expect(expanded.input.length).toBeGreaterThan(1);
+    expect(expanded.input.length).toBeLessThan(history.length);
+  });
+
+  test("bounds an individually oversized entry while retaining newest continuation metadata", () => {
+    process.env["OPENCODEX_RESPONSE_STATE_MAX_BYTES"] = "512";
+    clearResponseStateMemoryForTests();
+    const response = buildResponseJSON([
+      { type: "text_delta", text: "z".repeat(64 * 1024) },
+      { type: "done" },
+    ], "cursor/auto");
+
+    rememberResponseState({ model: "cursor/auto", input: "latest" }, response, "cursor_oversized");
+
+    const stats = responseStateStatsForTests();
+    expect(stats).toEqual(expect.objectContaining({ entries: 1, maxBytes: 512 }));
+    expect(stats.bytes).toBeLessThanOrEqual(512);
+    expect(previousResponseConversationId(response.id as string)).toBe("cursor_oversized");
+    const expanded = expandPreviousResponseInput({
+      model: "cursor/auto",
+      previous_response_id: response.id,
+      input: "continue",
+    }) as { input: unknown[] };
+    expect(expanded.input.at(-1)).toEqual({ role: "user", content: "continue" });
+  });
+
+  test("trims a tool call and its output together instead of retaining a dangling output", () => {
+    process.env["OPENCODEX_RESPONSE_STATE_MAX_BYTES"] = "650";
+    clearResponseStateMemoryForTests();
+    const callId = "call_trimmed_pair";
+    rememberResponseState({
+      model: "gpt-5.5",
+      input: [
+        { role: "user", content: "old context ".repeat(200) },
+        {
+          type: "function_call",
+          call_id: callId,
+          name: "lookup",
+          arguments: JSON.stringify({ schema: "c".repeat(300) }),
+        },
+        { type: "function_call_output", call_id: callId, output: "r".repeat(200) },
+        { role: "user", content: "latest safe boundary" },
+      ],
+    }, { id: "resp_tool_trim", output: [], status: "completed" });
+
+    const expanded = expandPreviousResponseInput({
+      model: "gpt-5.5",
+      previous_response_id: "resp_tool_trim",
+      input: "continue",
+    }) as { input: Array<Record<string, unknown>> };
+    const retainedCalls = new Set<string>();
+    for (const item of expanded.input) {
+      if (item.type === "function_call" && typeof item.call_id === "string") retainedCalls.add(item.call_id);
+      if (item.type === "function_call_output") {
+        expect(retainedCalls.has(item.call_id as string)).toBe(true);
+      }
+    }
+    expect(expanded.input.some(item => item.type === "function_call_output")).toBe(false);
+    expect(expanded.input.some(item => item.content === "latest safe boundary")).toBe(true);
+    expect(responseStateStatsForTests().bytes).toBeLessThanOrEqual(650);
+  });
+
+  test("falls back to previous_response_id when an oversized pending call cannot be retained", () => {
+    process.env["OPENCODEX_RESPONSE_STATE_MAX_BYTES"] = "300";
+    clearResponseStateMemoryForTests();
+    rememberResponseState({ model: "gpt-5.5", input: "run it" }, {
+      id: "resp_pending_trim",
+      status: "completed",
+      output: [{
+        type: "function_call",
+        call_id: "call_too_large",
+        name: "large_tool",
+        arguments: JSON.stringify({ value: "x".repeat(2_000) }),
+      }],
+    });
+    const next = {
+      model: "gpt-5.5",
+      previous_response_id: "resp_pending_trim",
+      input: [{ type: "function_call_output", call_id: "call_too_large", output: "done" }],
+    };
+
+    expect(expandPreviousResponseInput(next)).toEqual(next);
+    expect(responseStateStatsForTests().bytes).toBeLessThanOrEqual(300);
+  });
+
+  test("caps snapshot state while admitting the newest history first", () => {
+    process.env["OPENCODEX_RESPONSE_STATE_MAX_BYTES"] = "900";
+    const path = join(home, "responses-state.json");
+    const createdAt = Date.now();
+    writeFileSync(path, JSON.stringify({
+      version: 1,
+      states: [
+        ["resp_old", { createdAt, items: [{ role: "user", content: "o".repeat(600) }] }],
+        ["resp_new", { createdAt: createdAt + 1, items: [{ role: "user", content: "n".repeat(600) }] }],
+      ],
+    }));
+    clearResponseStateMemoryForTests();
+
+    const stats = responseStateStatsForTests();
+    expect(stats.bytes).toBeLessThanOrEqual(900);
+    const newest = expandPreviousResponseInput({ previous_response_id: "resp_new", input: "next" }) as {
+      input: Array<{ content?: string }>;
+    };
+    expect(newest.input[0]?.content).toBe("n".repeat(600));
   });
 
   test("oversized entries stay in memory but are skipped on disk", () => {

@@ -349,6 +349,12 @@ export interface OcxConfig {
   port: number;
   providers: Record<string, OcxProviderConfig>;
   defaultProvider: string;
+  /**
+   * Require routed non-OpenAI models to use the Linux MCP workspace gateway nested in the unified
+   * exec tool for local reads/search/commands. Native competing tools are hidden only while exec is
+   * present, so turns without exec retain their original catalog as a recovery path. Default true.
+   */
+  enforceLinuxMcp?: boolean;
   /** OpenAI provider-contract migration marker (v2 = single `openai` provider with account mode). */
   openaiProviderTierVersion?: 1 | 2;
   /** Claude Code inbound + launcher settings. */

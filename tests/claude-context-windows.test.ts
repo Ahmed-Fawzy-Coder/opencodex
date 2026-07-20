@@ -21,10 +21,10 @@ describe("claude context-window map (devlog 260712 B2)", () => {
 
   test("registers native slugs (bare + desktop alias + legacy alias)", () => {
     const map = buildClaudeContextWindows(["gpt-5.6-sol", "gpt-5.4"], []);
-    // Authoritative native overrides: gpt-5.6 natives 372k, gpt-5.4 native 1M.
-    expect(map["gpt-5.6-sol"]).toBe(372_000);
-    expect(map[desktop3pAlias("native", "gpt-5.6-sol")]).toBe(372_000);
-    expect(map["claude-ocx-native--gpt-5.6-sol"]).toBe(372_000);
+    // Authoritative native overrides: gpt-5.6 natives 272k, gpt-5.4 native 1M.
+    expect(map["gpt-5.6-sol"]).toBe(272_000);
+    expect(map[desktop3pAlias("native", "gpt-5.6-sol")]).toBe(272_000);
+    expect(map["claude-ocx-native--gpt-5.6-sol"]).toBe(272_000);
     expect(map["gpt-5.4"]).toBe(1_000_000);
   });
 
@@ -129,16 +129,16 @@ describe("auto-context (devlog 260712 020 + audit 021)", () => {
     ]);
     expect(map["gpt-5.6-luna"]).toBe(400_000);
     expect(map["shared-model"]).toBeUndefined();
-    expect(map["gpt-5.6-sol"]).toBe(372_000); // native override, not 999k
+    expect(map["gpt-5.6-sol"]).toBe(272_000); // native override, not 999k
   });
 
-  test("effectiveModelEnv auto-marks a 372k native slot under the default auto mode", () => {
+  test("effectiveModelEnv does not auto-mark a 272k native slot under the default auto mode", () => {
     const windows = buildClaudeContextWindows(["gpt-5.6-sol"], []);
     const env = effectiveModelEnv({ model: "gpt-5.6-sol" }, windows);
-    expect(env.ANTHROPIC_MODEL).toBe("gpt-5.6-sol[1m]");
-    // Readable-alias slot value gets the same marking (audit 051 #4).
+    expect(env.ANTHROPIC_MODEL).toBe("gpt-5.6-sol");
+    // Readable-alias slot value follows the same threshold decision (audit 051 #4).
     const readable = effectiveModelEnv({ model: "claude-ocx-native--gpt-5.6-sol" }, windows);
-    expect(readable.ANTHROPIC_MODEL).toBe("claude-ocx-native--gpt-5.6-sol[1m]");
+    expect(readable.ANTHROPIC_MODEL).toBe("claude-ocx-native--gpt-5.6-sol");
     // Explicit off: no marking below 1M.
     const off = effectiveModelEnv({ model: "gpt-5.6-sol", autoContext: false }, windows);
     expect(off.ANTHROPIC_MODEL).toBe("gpt-5.6-sol");

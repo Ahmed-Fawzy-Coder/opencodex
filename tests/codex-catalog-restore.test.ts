@@ -15,13 +15,13 @@ function backupPathForTestCatalog(codexHome: string, opencodexHome: string, cata
   return join(opencodexHome, `catalog-backup-${backupId}.json`);
 }
 
-function runScript(codexHome: string, opencodexHome: string, script: string): { stdout: string; status: number } {
+function runScript(codexHome: string, opencodexHome: string, script: string): { stdout: string; stderr: string; status: number } {
   const result = spawnSync(process.execPath, ["--eval", script], {
     cwd: repoRoot,
     env: { ...process.env, CODEX_HOME: codexHome, OPENCODEX_HOME: opencodexHome },
     encoding: "utf8",
   });
-  return { stdout: result.stdout?.trim() ?? "", status: result.status ?? 1 };
+  return { stdout: result.stdout?.trim() ?? "", stderr: result.stderr?.trim() ?? "", status: result.status ?? 1 };
 }
 
 describe("Codex catalog restore", () => {
@@ -177,24 +177,43 @@ describe("Codex catalog restore", () => {
     }, null, 2) + "\n");
 
     const r = runScript(codexHome, opencodexHome, `
-      const { syncCatalogModels } = require("./src/codex/catalog");
+      const { invalidateCodexModelsCache, syncCatalogModels } = require("./src/codex/catalog");
       (async () => {
-        const result = await syncCatalogModels({
+        const config = {
           port: 10100,
           providers: {},
           defaultProvider: "openai",
           subagentModels: ["gpt-5.5", "gpt-5.4", "gpt-5.3-codex-spark", "gpt-5.6-sol"],
-        });
+        };
+        await syncCatalogModels(config);
+        const result = await syncCatalogModels(config);
+        invalidateCodexModelsCache();
         console.log(JSON.stringify(result));
       })();
     `);
 
-    expect(r.status).toBe(0);
+    expect(r.status, r.stderr).toBe(0);
     const synced = JSON.parse(readFileSync(catalogPath, "utf8")).models as Array<Record<string, unknown>>;
     expect(synced.map(m => m.slug)).toContain("gpt-5.3-codex-spark");
     expect(synced.map(m => m.slug)).toContain("gpt-5.6-sol");
     expect(synced.map(m => m.slug)).toContain("gpt-5.6-terra");
     expect(synced.map(m => m.slug)).toContain("gpt-5.6-luna");
     expect(synced.find(m => m.slug === "gpt-5.4")?.max_context_window).toBe(1_000_000);
+    for (const slug of ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]) {
+      const model = synced.find(m => m.slug === slug);
+      expect(model?.context_window).toBe(272_000);
+      expect(model?.max_context_window).toBe(272_000);
+      expect(model?.auto_compact_token_limit).toBe(244_800);
+    }
+    expect(synced.some(m => m.context_window === 372_000 || m.max_context_window === 372_000)).toBe(false);
+    const cached = JSON.parse(readFileSync(join(codexHome, "models_cache.json"), "utf8")).models as Array<Record<string, unknown>>;
+    for (const slug of ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]) {
+      expect(cached.find(m => m.slug === slug)).toMatchObject({
+        context_window: 272_000,
+        max_context_window: 272_000,
+        auto_compact_token_limit: 244_800,
+      });
+    }
+    expect(cached.some(m => m.context_window === 372_000 || m.max_context_window === 372_000)).toBe(false);
   });
 });

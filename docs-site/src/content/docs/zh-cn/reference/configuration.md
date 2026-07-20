@@ -223,7 +223,7 @@ MCP、屏幕录制和 computer-use 使用独立的 `mcpServers` / `desktopExecut
 
 Preview GPT-5.6 fallback 条目采用相同机制。OpenAI API-key preset 会以 context `1050000`、
 max input `922000` seed base 和 Pro id；OpenRouter preset 会以 context `1050000` seed
-`openai/gpt-5.6-sol`、`terra`、`luna`。Pool/Direct 的 Codex 目录契约为 `372000`；同步后的
+`openai/gpt-5.6-sol`、`terra`、`luna`。Pool/Direct 的 Codex 目录契约为 `272000`；同步后的
 Codex 目录会公布 `max` reasoning，同时与 `xhigh` 保持
 区分。保持 `liveModels` 开启可把实时 provider 结果与这些显式条目合并；设为 `false` 则只暴露
 `models`。

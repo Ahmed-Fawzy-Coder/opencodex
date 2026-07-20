@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -244,30 +244,86 @@ describe("ContextResultStore", () => {
     expect(readUltimateContextMetrics().invalidHandles).toBe(2);
   });
 
-  test("expires TTL entries and evicts deterministically by entry and byte caps", () => {
+  test("unique writes enforce TTL, entry, and byte caps", () => {
     let now = 1_000;
     const ttlStore = store({ ttlMs: 50, now: () => now });
     const expired = ttlStore.put("expires")!;
     now = 1_051;
-    expect(ttlStore.get(expired.handle)).toEqual({ ok: false, error: "expired" });
+    ttlStore.put("fresh");
+    expect(ttlStore.get(expired.handle)).toEqual({ ok: false, error: "not_found" });
 
     const cappedRoot = join(root, "capped");
-    let tick = 2_000;
     const capped = new ContextResultStore({
       rootDir: cappedRoot,
       secret: Buffer.alloc(32, 8),
       maxEntries: 2,
-      maxBytes: 10,
-      now: () => tick++,
+      maxBytes: 100,
+      now: () => now,
     });
     const first = capped.put("aaaa")!;
+    now += 1;
     const second = capped.put("bbbb")!;
+    now += 1;
     const third = capped.put("cccc")!;
     expect(capped.get(first.handle)).toEqual({ ok: false, error: "not_found" });
     expect(capped.get(second.handle).ok).toBe(true);
     expect(capped.get(third.handle).ok).toBe(true);
     expect(readdirSync(cappedRoot).filter(name => name.endsWith(".json"))).toHaveLength(2);
+
+    const byteCapped = new ContextResultStore({
+      rootDir: join(root, "byte-capped"),
+      secret: Buffer.alloc(32, 9),
+      maxEntries: 10,
+      maxBytes: 7,
+      now: () => now,
+    });
+    const bytesFirst = byteCapped.put("1111")!;
+    now += 1;
+    const bytesSecond = byteCapped.put("2222")!;
+    expect(byteCapped.get(bytesFirst.handle)).toEqual({ ok: false, error: "not_found" });
+    expect(byteCapped.get(bytesSecond.handle).ok).toBe(true);
     expect(readUltimateContextMetrics().evictedEntries).toBeGreaterThanOrEqual(1);
+  });
+
+  test("repeated identical puts bypass sweep and do not rewrite the stored envelope", () => {
+    const contextStore = store();
+    const first = contextStore.put("same immutable snapshot")!;
+    const path = join(contextStore.rootDir, `${first.handle}.json`);
+    const before = readFileSync(path, "utf-8");
+    const beforeStat = statSync(path);
+    let sweepCalls = 0;
+    contextStore.sweep = () => { sweepCalls += 1; };
+
+    for (let count = 0; count < 100; count += 1) {
+      expect(contextStore.put("same immutable snapshot")).toEqual(first);
+    }
+
+    expect(sweepCalls).toBe(0);
+    expect(readFileSync(path, "utf-8")).toBe(before);
+    expect(statSync(path).mtimeMs).toBe(beforeStat.mtimeMs);
+    expect(statSync(path).ino).toBe(beforeStat.ino);
+  });
+
+  test("an identical put after TTL replaces the expired envelope and records its expiration", () => {
+    let now = 1_000;
+    const contextStore = store({ ttlMs: 50, now: () => now });
+    const first = contextStore.put("same content after expiry")!;
+
+    now = 1_051;
+    const second = contextStore.put("same content after expiry")!;
+    const retrieval = contextStore.get(second.handle);
+
+    expect(second.handle).toBe(first.handle);
+    expect(second.expiresAt).toBe(1_101);
+    expect(retrieval).toEqual(expect.objectContaining({
+      ok: true,
+      content: "same content after expiry",
+    }));
+    expect(readUltimateContextMetrics()).toEqual(expect.objectContaining({
+      storeWrites: 2,
+      expiredEntries: 1,
+    }));
+    expect(readdirSync(contextStore.rootDir).filter(name => name.endsWith(".json"))).toHaveLength(1);
   });
 
   test("deduplicates snapshots and exposes numeric-only aggregate metrics", () => {

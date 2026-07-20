@@ -103,10 +103,8 @@ describe("anthropic-flavor ModelInfo discovery entries (devlog 130 B4b)", () => 
       { provider: "mock", id: "mid-model", contextWindow: 300_000 }, // < compact window: unsafe, no row
     ], auto);
     const variants = infos.filter(i => i.id.endsWith("[1m]"));
-    expect(variants).toHaveLength(2); // gpt-5.4 (1M) + gpt-5.6-sol (372k)
-    const sol = variants.find(v => v.display_name.includes("gpt-5.6-sol"))!;
-    expect(sol.display_name.endsWith("· 372k")).toBe(true); // honest real window, not "1M"
-    expect(sol.max_input_tokens).toBe(372_000);
+    expect(variants).toHaveLength(1); // gpt-5.4 (1M); gpt-5.6-sol is below the 350k compact window.
+    expect(variants.some(v => v.display_name.includes("gpt-5.6-sol"))).toBe(false);
     const five4 = variants.find(v => v.display_name.includes("gpt-5.4"))!;
     expect(five4.display_name.endsWith("· 1M")).toBe(true);
   });
@@ -131,7 +129,7 @@ describe("anthropic-flavor ModelInfo discovery entries (devlog 130 B4b)", () => 
     ], auto, "readable");
     const ids = infos.map(i => i.id);
     expect(ids).toContain("claude-ocx-native--gpt-5.6-sol");
-    expect(ids).toContain("claude-ocx-native--gpt-5.6-sol[1m]"); // 372k native, auto-marked
+    expect(ids).not.toContain("claude-ocx-native--gpt-5.6-sol[1m]"); // 272k native stays below the auto-context threshold.
     expect(ids).toContain("claude-ocx-cursor--gpt-5.6-luna");
     expect(ids).toContain("claude-ocx-cursor--gpt-5.6-luna[1m]");
     expect(ids).toContain("claude-opus-4-8"); // anthropic canonical passthrough

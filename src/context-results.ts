@@ -360,8 +360,9 @@ export class ContextResultStore {
       requestMetricsPersist();
       return null;
     }
-    this.sweep();
     const handle = this.handleFor(bytes);
+    // Dedupe is the overwhelmingly common path. A valid handle identifies immutable content, so
+    // check it before the directory-wide sweep and do no cleanup or entry rewrite on a hit.
     const existing = this.readEnvelope(handle);
     if (existing && existing.expiresAt > this.now()) {
       metrics.storeHits += 1;
@@ -375,6 +376,10 @@ export class ContextResultStore {
       requestMetricsPersist();
       return result;
     }
+    // Replacing an expired envelope with identical content would otherwise hide that expiration
+    // from the maintenance sweep: the atomic rename installs the fresh envelope at the same path
+    // before sweep can observe the old one. Remove and account for the expired target exactly once.
+    if (existing) this.removeEnvelope(existing, "expired");
     const sha256 = createHash("sha256").update(bytes).digest("hex");
     const createdAt = this.now();
     const envelope: StoredEnvelope = {
@@ -400,6 +405,8 @@ export class ContextResultStore {
       throw error;
     }
     metrics.storeWrites += 1;
+    // Unique writes (and construction) are the maintenance boundary. This keeps TTL/count/byte
+    // caps exact after every mutation without charging repeated dedupe hits for a full scan.
     this.sweep();
     if (!existsSync(target)) {
       metrics.storeRejected += 1;

@@ -32,6 +32,7 @@ differing backup and rewrites known legacy namespaced selected ids to bare ids.
 | `providers` | `Record<string, OcxProviderConfig>` | — | Map of provider name → config. |
 | `openaiProviderTierVersion?` | `2` | set by migration | Marks the single option-aware OpenAI projection as complete. |
 | `defaultProvider` | `string` | `"openai"` | Provider used when routing finds no better match. |
+| `enforceLinuxMcp?` | `boolean` | `true` | For routed non-OpenAI providers with unified `exec`, hide competing native workspace tools and `tool_search`, then direct local project work through `tools.mcp__linux_mcp__workspace` in `exec.ALL_TOOLS`. If `exec` is absent the original catalog is preserved. |
 | `subagentModels?` | `string[]` | `gpt-5.5`, GPT-5.6 trio, `gpt-5.4-mini` | Up to 5 native slugs or `provider/model` ids featured first in Codex's subagent picker. Also injected into v2 delegation guidance as the available-model roster, annotated with the effort ladder each entry advertises in the catalog. An explicit empty list is preserved. |
 | `injectionModel?` | `string` | — | Preferred native or routed model named in the injected multi-agent guidance (v2 surface); delegation is told to pass this exact model to `spawn_agent` with `fork_turns: "none"`. |
 | `injectionEffort?` | `string` | — | Preferred `spawn_agent` reasoning effort (`low` through `ultra`). Only meaningful with `injectionModel`. |
@@ -246,7 +247,7 @@ the allowlist can be changed later.
 Preview GPT-5.6 fallback entries use the same mechanism. The OpenAI API-key preset seeds base and
 Pro ids with context `1050000` and max input `922000`; the OpenRouter preset seeds
 `openai/gpt-5.6-sol`, `openai/gpt-5.6-terra`, and `openai/gpt-5.6-luna` with context `1050000`.
-The Pool/Direct Codex catalog contract is `372000`, and the synced Codex catalog advertises
+The Pool/Direct Codex catalog contract is `272000` with automatic compaction at `244800`, and the synced Codex catalog advertises
 `max` reasoning while keeping `xhigh` distinct. Leave `liveModels` on to merge live provider results
 with those explicit additions, or set it to `false` to expose only `models`.
 

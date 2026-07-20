@@ -450,9 +450,9 @@ describe("Codex catalog routed normalization", () => {
     expect((gpt56?.supported_reasoning_levels as { effort: string }[]).map(l => l.effort)).toEqual([
       "low", "medium", "high", "xhigh", "max", "ultra",
     ]);
-    expect(gpt56?.context_window).toBe(372_000);
-    expect(gpt56?.max_context_window).toBe(372_000);
-    expect(gpt56?.auto_compact_token_limit).toBe(334_800);
+    expect(gpt56?.context_window).toBe(272_000);
+    expect(gpt56?.max_context_window).toBe(272_000);
+    expect(gpt56?.auto_compact_token_limit).toBe(244_800);
     expect((gpt55?.supported_reasoning_levels as { effort: string }[]).map(l => l.effort)).toEqual([
       "low", "medium", "high", "xhigh", "max", "ultra",
     ]);
@@ -494,7 +494,9 @@ describe("Codex catalog routed normalization", () => {
       expect(e).not.toHaveProperty("minimal_client_version");
       expect(e).not.toHaveProperty("prefer_websockets");
       expect(e).not.toHaveProperty("supports_websockets");
-      expect(e?.context_window).toBe(372_000);
+      expect(e?.context_window).toBe(272_000);
+      expect(e?.max_context_window).toBe(272_000);
+      expect(e?.auto_compact_token_limit).toBe(244_800);
       expect(e?.tool_mode).toBe("code_mode_only");
       expect(e?.use_responses_lite).toBe(true);
     }
@@ -1527,7 +1529,7 @@ describe("OpenAI API trusted catalog augmentation", () => {
     const rows = augmentRoutedModelsWithRegistryOpenAiApiRows([
       { provider: "openai-apikey", id: "gpt-5.6-sol", contextWindow: 1, maxInputTokens: 1, inputModalities: ["text"], reasoningEfforts: ["low"], owned_by: "live" },
       { provider: "openai-apikey", id: "unrelated-live-model", contextWindow: 999 },
-      { provider: "openai", id: "gpt-5.6-sol", contextWindow: 372_000 },
+      { provider: "openai", id: "gpt-5.6-sol", contextWindow: 272_000 },
     ], openAiApiCatalogConfig());
 
     expect(rows.filter(row => row.provider === "openai-apikey").map(row => row.id)).toEqual(exactIds);
@@ -1537,7 +1539,7 @@ describe("OpenAI API trusted catalog augmentation", () => {
       inputModalities: ["text", "image"],
       reasoningEfforts: ["low", "medium", "high", "xhigh", "max"],
     });
-    expect(rows.find(row => row.provider === "openai" && row.id === "gpt-5.6-sol")?.contextWindow).toBe(372_000);
+    expect(rows.find(row => row.provider === "openai" && row.id === "gpt-5.6-sol")?.contextWindow).toBe(272_000);
   });
 
   test("actual live discovery path reconnects omitted rows and removes unrelated models", async () => {
