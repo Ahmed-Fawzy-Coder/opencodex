@@ -143,19 +143,67 @@ http://127.0.0.1:10100
 
 Add at least one provider, choose its default model, and confirm it appears in the model catalog. Provider credentials remain in `~/.opencodex/config.json`; do not commit that file.
 
+### Complete installation order: OpenCodex + Linux MCP
+
+For a fresh machine, use this order so every dependency is ready before Codex Desktop opens:
+
+1. Install this OpenCodex fork from source and run `ocx init`.
+2. Install Linux MCP with `./scripts/install-systemd-user.sh` from its repository.
+3. Put the Linux MCP block in the global `~/.codex/config.toml` and copy its global agent rules into `~/.codex/AGENTS.md`.
+4. Enable the OpenCodex Ultimate Context configuration in `~/.opencodex/config.json` if it is not already enabled.
+5. Install the OpenCodex background service with `ocx service install`.
+6. Enable user lingering once with `loginctl enable-linger "$USER"`.
+7. Completely quit and reopen Codex Desktop so it reloads the proxy and MCP configuration.
+8. Run the combined verification commands below before starting real work.
+
+The two local layers have different jobs and can run independently:
+
+| Layer | Address | Responsibility |
+| --- | --- | --- |
+| OpenCodex | `http://127.0.0.1:10100` | Provider proxy, account/model routing, Usage UI, and reversible reduction of large non-Linux-MCP tool results |
+| Linux MCP | `http://127.0.0.1:8000/mcp` | Token-bounded local project search, reads, edits, commands, tests, jobs, and logs |
+
+There is no required service startup order. OpenCodex tolerates Linux MCP telemetry being temporarily unavailable, and Codex's MCP startup grace period lets Linux MCP finish its first Python import. Both services should nevertheless be enabled and healthy before a new Codex task begins.
+
 ### Start OpenCodex automatically at boot
 
 Install or update the official user service:
 
 ```bash
-ocx service
+ocx service install
 ```
+
+`ocx service` with no subcommand is an alias for `ocx service install`.
+
+Before installation, make sure the command resolves in the same user account that will run Codex:
+
+```bash
+command -v ocx
+ocx --version
+ocx doctor
+```
+
+This matters especially when Node was installed with `nvm` or `fnm`. The generated service stores absolute executable paths, so it does not depend on an interactive shell's `PATH` after installation. Rerun `ocx service install` after changing Node versions, moving the global package, or installing a newer source build.
 
 On Linux, enable user lingering so the systemd user manager can start the proxy at boot even before an interactive desktop login:
 
 ```bash
 loginctl enable-linger "$USER"
 ```
+
+If the command needs administrator authorization on your distribution:
+
+```bash
+sudo loginctl enable-linger "$USER"
+```
+
+Verify that it actually succeeded:
+
+```bash
+loginctl show-user "$USER" -p Linger
+```
+
+The expected value is `Linger=yes`. Without lingering, the service still starts automatically at desktop login; with lingering, the user's systemd manager starts it during computer boot before an interactive login.
 
 Verify the service:
 
@@ -167,6 +215,66 @@ curl http://127.0.0.1:10100/healthz
 ```
 
 Once the service is installed, you do not need to run `ocx start` after every reboot. The unit restarts OpenCodex automatically after failures.
+
+On Linux the unit is stored at:
+
+```text
+~/.config/systemd/user/opencodex-proxy.service
+```
+
+The package configuration, usage data, context snapshots, token file, and service log remain under `~/.opencodex/`. Keep that directory private and never commit it.
+
+### What happens after every reboot
+
+1. systemd starts the user's service manager because `Linger=yes`.
+2. `opencodex-proxy.service` starts and binds to the configured loopback port, normally `10100`.
+3. `linux-mcp.socket` and `linux-mcp.service` become available on loopback port `8000`.
+4. Codex Desktop opens and reads its global proxy and MCP configuration.
+5. New tasks can use the provider proxy and the compact Linux MCP `workspace` gateway immediately.
+
+Do not add `ocx start` to `.bashrc`, `.profile`, desktop startup applications, or cron when the systemd service is installed. Starting a second manual proxy can create port conflicts and make service status misleading.
+
+### Prove both services start automatically
+
+Before rebooting:
+
+```bash
+systemctl --user is-enabled opencodex-proxy.service linux-mcp.socket linux-mcp.service
+loginctl show-user "$USER" -p Linger
+```
+
+Expected output is three `enabled` lines and `Linger=yes`. Reboot the computer, do not run `ocx start` or `start-linux-mcp`, then run:
+
+```bash
+systemctl --user is-active opencodex-proxy.service linux-mcp.socket linux-mcp.service
+curl --fail --silent --show-error http://127.0.0.1:10100/healthz
+curl --fail --silent --show-error http://127.0.0.1:8000/health
+```
+
+Expected output is three `active` lines and two successful health responses. Finally open:
+
+```text
+http://127.0.0.1:10100/#usage
+```
+
+The page refreshes only when you reload it or change its range filter.
+
+### Daily service controls
+
+| Goal | Preferred command |
+| --- | --- |
+| Install/update and start the service | `ocx service install` |
+| Show OpenCodex service diagnostics | `ocx service status` |
+| Start an installed service | `ocx service start` |
+| Stop the service and restore native Codex | `ocx service stop` |
+| Remove only the background service | `ocx service uninstall` |
+| Check the proxy process/config | `ocx status` |
+| Run full diagnostics | `ocx doctor` |
+| Open the dashboard | `ocx gui` |
+| Read the bounded service log | `tail -n 100 ~/.opencodex/service.log` |
+| Read systemd journal entries | `journalctl --user -u opencodex-proxy.service -n 100 --no-pager` |
+
+Prefer `ocx service stop` over a raw `systemctl stop` when you intentionally want to return to native Codex, because the OpenCodex command also restores the native Codex configuration. A raw `systemctl --user restart opencodex-proxy.service` is appropriate for a quick maintenance restart.
 
 If `ocx service` reports that port `10100` is already in use by a manually started proxy, convert it cleanly:
 
@@ -252,9 +360,24 @@ ocx status
 ocx service status
 journalctl --user -u opencodex-proxy.service -n 100 --no-pager
 systemctl --user status opencodex-proxy.service
+tail -n 100 ~/.opencodex/service.log
 ```
 
 If the proxy is healthy but Codex does not route through it, run `ocx doctor` and review the Codex shim/account-mode diagnostics. For Codex Desktop, the always-on service keeps the proxy available even when an on-demand CLI shim is not being used.
+
+For a complete global-routing check, confirm all of the following:
+
+```bash
+ocx doctor
+rg -n 'openai_base_url|model_catalog_json' ~/.codex/config.toml
+systemctl --user is-active opencodex-proxy.service
+```
+
+`ocx doctor` should report a running proxy and no project-local provider bypass. The injected Codex configuration should point `openai_base_url` to `http://127.0.0.1:10100/v1` and use the OpenCodex model catalog. Start a new read-only Codex task and confirm its request appears in OpenCodex Usage; already-open tasks may retain routing state loaded before the configuration changed.
+
+#### Codex logs `426 Upgrade Required` and falls back to HTTP
+
+Some Codex builds probe the Responses WebSocket URL even when their listed WebSocket feature flags are removed or disabled. OpenCodex may answer that probe with `426 Upgrade Required`; Codex then logs `falling back to HTTP` and continues through the supported HTTP/SSE path. If the turn proceeds normally, the health endpoint succeeds, and Usage records the request, this warning is not a proxy failure. Do not enable WebSocket transport merely to hide the warning.
 
 If the Linux MCP card is missing:
 
@@ -262,6 +385,48 @@ If the Linux MCP card is missing:
 2. Confirm OpenCodex has at least one recorded request.
 3. Reload `http://127.0.0.1:10100/#usage` manually.
 4. Check that Linux MCP is bound to `127.0.0.1:8000`.
+
+#### `ocx` works in one terminal but is not found elsewhere
+
+Find the npm global binary directory and add it to the target user's shell `PATH`:
+
+```bash
+npm prefix -g
+command -v ocx
+```
+
+With `nvm` or `fnm`, open a shell that initializes the version manager, reinstall this fork if needed, and rerun `ocx service install`. The installed service itself uses absolute paths; the shell needs `ocx` only to manage or update it.
+
+#### Service is enabled but did not start after reboot
+
+```bash
+loginctl show-user "$USER" -p Linger -p State
+systemctl --user is-enabled opencodex-proxy.service
+systemctl --user status opencodex-proxy.service --no-pager
+journalctl --user -u opencodex-proxy.service -b -n 100 --no-pager
+```
+
+Confirm `Linger=yes`. If the unit contains an old Node/Bun path, rerun `ocx service install` from the currently installed fork.
+
+#### Port `10100` is already in use
+
+```bash
+ss -ltnp | grep ':10100'
+ocx status
+systemctl --user status opencodex-proxy.service --no-pager
+```
+
+Stop the manually launched proxy with `ocx stop`, then start the installed service with `ocx service start`. Do not kill an unrelated process until you identify it.
+
+#### Run without systemd
+
+On Docker, WSL without systemd, or another environment without a user service manager, run OpenCodex under the environment's process supervisor:
+
+```bash
+ocx start
+```
+
+For supported WSL releases, enable systemd in `/etc/wsl.conf`, run `wsl --shutdown` from Windows, reopen the distribution, and then use `ocx service install`. Linux MCP likewise requires either its systemd user units or a separate supervisor/manual process.
 
 ### Uninstall the background service
 
@@ -518,6 +683,8 @@ lightweight, on-demand proxy startup without a background daemon. Shim autostart
 and can be disabled from the GUI dashboard. If the configured proxy port is already busy, `ocx start`
 automatically picks another free local port and updates Codex to use it.
 
+Codex Desktop users should prefer the service. The shim is triggered only when the wrapped `codex` command is launched, so it is not a guarantee that the proxy is already running when the desktop application opens. Installing both is supported, but the service is the component that provides computer-boot availability.
+
 ### Uninstall
 
 Before removing the npm package, clean up local state:
@@ -600,7 +767,7 @@ Local models work too. Point opencodex at any OpenAI-compatible server running o
 }
 ```
 
-WebSocket transport is off by default. Set `"websockets": true` only if you want Codex to advertise and use the Responses WebSocket path instead of HTTP/SSE.
+OpenCodex WebSocket transport is off by default. Set `"websockets": true` only when both the selected provider path and client support it and you intentionally want Codex to advertise the Responses WebSocket path instead of HTTP/SSE. A client-side WebSocket probe followed by a successful HTTP fallback does not require enabling this option.
 
 ### Remote access
 
