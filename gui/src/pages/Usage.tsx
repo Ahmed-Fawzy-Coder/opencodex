@@ -64,6 +64,23 @@ interface UsageProvider {
   shareRatio: number;
 }
 
+interface LinuxMcpSavings {
+  calls: number;
+  measuredCalls: number;
+  measuredSegments: number;
+  truncatedCalls: number;
+  returnedChars: number;
+  estimatedUnboundedChars: number;
+  estimatedAvoidedChars: number;
+  returnedTokensEstimate: number;
+  unboundedTokensEstimate: number;
+  avoidedTokensEstimate: number;
+  savingsRatio: number;
+  startedAt: number | null;
+  generatedAt: number;
+  method: string;
+}
+
 interface UsageResponse {
   range: Range;
   surface: UsageSurface;
@@ -73,6 +90,7 @@ interface UsageResponse {
   days: UsageDay[];
   models: UsageModel[];
   providers: UsageProvider[];
+  mcpSavings?: LinuxMcpSavings | null;
   error?: string;
 }
 
@@ -275,6 +293,51 @@ function UsageSummaryCards({
       <div className="stat"><div className="muted">{t("usage.card.coverage")}</div><div className="stat-value">{formatPct(summary.coverageRatio)}</div></div>
       <div className="stat"><div className="muted">{t("usage.card.activeDays")}</div><div className="stat-value">{activeDays}</div></div>
     </div>
+  );
+}
+
+function LinuxMcpSavingsCard({ savings, locale, t }: {
+  savings: LinuxMcpSavings;
+  locale: Locale;
+  t: TFn;
+}) {
+  return (
+    <section className="panel" style={{ marginTop: 16 }} aria-labelledby="usage-mcp-title">
+      <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
+        <div>
+          <h3 id="usage-mcp-title" className="panel-title">{t("usage.mcp.title")}</h3>
+          <p className="muted text-caption" style={{ margin: "4px 0 0" }}>
+            {t("usage.mcp.subtitle", { calls: savings.measuredCalls })}
+          </p>
+        </div>
+        <span className="badge badge-green">{t("usage.mcp.less", { percent: Math.round(savings.savingsRatio * 100) })}</span>
+      </div>
+      <div className="usage-cards usage-cards-3x2" style={{ marginTop: 12 }}>
+        <div className="stat">
+          <div className="muted">{t("usage.mcp.unbounded")}</div>
+          <div className="stat-value">{formatTokens(savings.unboundedTokensEstimate, locale)}</div>
+          <div className="muted text-caption">{t("usage.mcp.estimatedChars", { count: formatTokens(savings.estimatedUnboundedChars, locale) })}</div>
+        </div>
+        <div className="stat">
+          <div className="muted">{t("usage.mcp.returned")}</div>
+          <div className="stat-value">{formatTokens(savings.returnedTokensEstimate, locale)}</div>
+          <div className="muted text-caption">{t("usage.mcp.measuredChars", { count: formatTokens(savings.returnedChars, locale) })}</div>
+        </div>
+        <div className="stat">
+          <div className="muted">{t("usage.mcp.avoided")}</div>
+          <div className="stat-value">{formatTokens(savings.avoidedTokensEstimate, locale)}</div>
+          <div className="muted text-caption">{t("usage.mcp.estimatedChars", { count: formatTokens(savings.estimatedAvoidedChars, locale) })}</div>
+        </div>
+        <div className="stat">
+          <div className="muted">{t("usage.mcp.calls")}</div>
+          <div className="stat-value">{savings.measuredCalls}</div>
+        </div>
+        <div className="stat">
+          <div className="muted">{t("usage.mcp.truncated")}</div>
+          <div className="stat-value">{savings.truncatedCalls}</div>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -591,6 +654,7 @@ export default function Usage({ apiBase }: { apiBase: string }) {
       ) : (
         <>
           <UsageSummaryCards summary={data.summary} activeDays={activeDays} locale={locale} t={t} />
+          {data.mcpSavings && <LinuxMcpSavingsCard savings={data.mcpSavings} locale={locale} t={t} />}
           <UsageHeatmapPanel range={range} heatmap={heatmap} weekBars={weekBars} locale={locale} t={t} />
           <UsageModelsTable models={filteredModels} modelQuery={modelQuery} onModelQuery={setModelQuery} locale={locale} t={t} />
           <UsageProvidersTable providers={sortedProviders} locale={locale} t={t} />

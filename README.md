@@ -56,6 +56,188 @@ flowchart LR
   cooldown --> quota
 ```
 
+## This fork: Linux MCP integration and always-on setup
+
+This fork keeps the full upstream OpenCodex feature set and adds a live **Linux MCP savings** card to `http://localhost:10100/#usage`.
+
+The card reads local telemetry from [Ahmed-Fawzy-Coder/linux_mcp](https://github.com/Ahmed-Fawzy-Coder/linux_mcp) and shows:
+
+- estimated tokens available before Linux MCP bounded the payload;
+- estimated tokens returned through MCP;
+- estimated tokens avoided;
+- measured character counts used for the estimate;
+- measured calls and bounded calls.
+
+Token values use `4 characters ≈ 1 token`. They are estimates because tokenization differs by model and language. OpenCodex uses a 250ms timeout when reading Linux MCP telemetry; if Linux MCP is unavailable, the normal Usage page continues to work and the card is omitted.
+
+The Usage page does not poll automatically. Reload it manually or change the `7d`, `30d`, or `All` filter when you want fresh statistics.
+
+### Install this fork from source
+
+Requirements:
+
+- Node.js 18 or newer, preferably through `nvm` or `fnm`.
+- Git.
+- Linux with systemd for the always-on service instructions below.
+
+```bash
+git clone https://github.com/Ahmed-Fawzy-Coder/opencodex.git
+cd opencodex
+npm install --no-package-lock
+npm run build:gui
+npm install -g .
+```
+
+Do not use `--ignore-scripts` or omit optional dependencies; OpenCodex installs its bundled Bun runtime during installation.
+
+Confirm the fork is installed:
+
+```bash
+ocx --version
+ocx doctor
+```
+
+### Initial OpenCodex configuration
+
+```bash
+ocx init
+ocx gui
+```
+
+The dashboard opens at:
+
+```text
+http://127.0.0.1:10100
+```
+
+Add at least one provider, choose its default model, and confirm it appears in the model catalog. Provider credentials remain in `~/.opencodex/config.json`; do not commit that file.
+
+### Start OpenCodex automatically at boot
+
+Install or update the official user service:
+
+```bash
+ocx service
+```
+
+On Linux, enable user lingering so the systemd user manager can start the proxy at boot even before an interactive desktop login:
+
+```bash
+loginctl enable-linger "$USER"
+```
+
+Verify the service:
+
+```bash
+ocx service status
+systemctl --user is-enabled opencodex-proxy.service
+systemctl --user is-active opencodex-proxy.service
+curl http://127.0.0.1:10100/healthz
+```
+
+Once the service is installed, you do not need to run `ocx start` after every reboot. The unit restarts OpenCodex automatically after failures.
+
+If `ocx service` reports that port `10100` is already in use by a manually started proxy, convert it cleanly:
+
+```bash
+systemctl --user stop opencodex-proxy.service
+ocx stop
+systemctl --user reset-failed opencodex-proxy.service
+systemctl --user start opencodex-proxy.service
+```
+
+### Install and connect Linux MCP
+
+Follow the complete Linux MCP guide:
+
+```text
+https://github.com/Ahmed-Fawzy-Coder/linux_mcp#quick-start
+```
+
+At minimum:
+
+```bash
+git clone https://github.com/Ahmed-Fawzy-Coder/linux_mcp.git
+cd linux_mcp
+./scripts/install-systemd-user.sh
+```
+
+Then add the global MCP block from `linux_mcp/examples/codex-config.toml` to `~/.codex/config.toml`, using the same bearer token as `linux_mcp/mcp_server/.env`. Add `linux_mcp/examples/AGENTS.md` to your global `~/.codex/AGENTS.md`, then fully restart Codex Desktop.
+
+Check telemetry directly:
+
+```bash
+curl 'http://127.0.0.1:8000/metrics?range=30d'
+```
+
+Open the combined dashboard:
+
+```text
+http://127.0.0.1:10100/#usage
+```
+
+The Linux MCP card becomes visible when OpenCodex has usage data and the telemetry endpoint is available.
+
+### Reset Usage and Linux MCP statistics
+
+This permanently removes the local statistics. Stop both writers before deleting their files:
+
+```bash
+systemctl --user stop opencodex-proxy.service
+systemctl --user stop linux-mcp.service linux-mcp.socket
+rm -- ~/.opencodex/usage.jsonl
+rm -- /absolute/path/to/linux_mcp/mcp_server/audit.log
+systemctl --user start linux-mcp.socket linux-mcp.service
+systemctl --user start opencodex-proxy.service
+```
+
+Verify the reset:
+
+```bash
+curl 'http://127.0.0.1:8000/metrics?range=all'
+curl 'http://127.0.0.1:10100/api/usage?range=all&surface=all'
+```
+
+### Update this fork
+
+From the cloned repository:
+
+```bash
+git pull --ff-only
+npm install --no-package-lock
+npm run build:gui
+npm install -g .
+ocx service
+```
+
+The final `ocx service` updates and restarts the systemd service with the newly installed source.
+
+### Logs and troubleshooting
+
+```bash
+ocx status
+ocx service status
+journalctl --user -u opencodex-proxy.service -n 100 --no-pager
+systemctl --user status opencodex-proxy.service
+```
+
+If the proxy is healthy but Codex does not route through it, run `ocx doctor` and review the Codex shim/account-mode diagnostics. For Codex Desktop, the always-on service keeps the proxy available even when an on-demand CLI shim is not being used.
+
+If the Linux MCP card is missing:
+
+1. Confirm `curl http://127.0.0.1:8000/metrics?range=30d` succeeds.
+2. Confirm OpenCodex has at least one recorded request.
+3. Reload `http://127.0.0.1:10100/#usage` manually.
+4. Check that Linux MCP is bound to `127.0.0.1:8000`.
+
+### Uninstall the background service
+
+```bash
+ocx service uninstall
+```
+
+This removes the service but leaves the OpenCodex package and configuration. The broader `ocx uninstall` command can remove service, shim, and configuration; read its prompt carefully before confirming.
+
 ## Supported platforms
 
 | OS | Status | Service manager |

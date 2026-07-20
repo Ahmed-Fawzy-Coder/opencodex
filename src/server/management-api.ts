@@ -60,6 +60,50 @@ export const VERSION = (() => {
   }
 })();
 
+async function fetchLinuxMcpSavings(range: string): Promise<Record<string, unknown> | null> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 250);
+  try {
+    const response = await fetch(`http://127.0.0.1:8000/metrics?range=${encodeURIComponent(range)}`, {
+      signal: controller.signal,
+    });
+    if (!response.ok) return null;
+    const value = await response.json();
+    if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+    const metrics = value as Record<string, unknown>;
+    const nonNegativeFields = [
+      "calls",
+      "measuredCalls",
+      "measuredSegments",
+      "truncatedCalls",
+      "returnedChars",
+      "estimatedUnboundedChars",
+      "estimatedAvoidedChars",
+      "returnedTokensEstimate",
+      "unboundedTokensEstimate",
+      "avoidedTokensEstimate",
+      "generatedAt",
+    ];
+    if (nonNegativeFields.some(key => (
+      typeof metrics[key] !== "number"
+      || !Number.isFinite(metrics[key])
+      || (metrics[key] as number) < 0
+    ))) return null;
+    if (typeof metrics.savingsRatio !== "number"
+      || !Number.isFinite(metrics.savingsRatio)
+      || metrics.savingsRatio < 0
+      || metrics.savingsRatio > 1) return null;
+    if (metrics.startedAt !== null
+      && (typeof metrics.startedAt !== "number" || !Number.isFinite(metrics.startedAt))) return null;
+    if (typeof metrics.method !== "string") return null;
+    return metrics;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export interface ManagementApiDeps {
   toggleCodexMultiAgentV2?: (enabled: boolean) => void;
   refreshCodexCatalog?: () => Promise<void>;
@@ -369,7 +413,8 @@ export async function handleManagementAPI(req: Request, url: URL, config: OcxCon
     const surface = parseUsageSurface(url.searchParams.get("surface"));
     const now = Date.now();
     try {
-      return jsonResponse(summarizeUsage(readUsageEntries(), range, now, surface));
+      const usage = summarizeUsage(readUsageEntries(), range, now, surface);
+      return jsonResponse({ ...usage, mcpSavings: await fetchLinuxMcpSavings(range) });
     } catch {
       return jsonResponse({
         range,
@@ -395,6 +440,7 @@ export async function handleManagementAPI(req: Request, url: URL, config: OcxCon
         days: [],
         models: [],
         providers: [],
+        mcpSavings: await fetchLinuxMcpSavings(range),
         error: "read_failed",
       });
     }

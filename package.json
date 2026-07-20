@@ -83,11 +83,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/lidge-jun/opencodex.git"
+    "url": "git+https://github.com/Ahmed-Fawzy-Coder/opencodex.git"
   },
-  "homepage": "https://lidge-jun.github.io/opencodex/",
+  "homepage": "https://github.com/Ahmed-Fawzy-Coder/opencodex#readme",
   "bugs": {
-    "url": "https://github.com/lidge-jun/opencodex/issues"
+    "url": "https://github.com/Ahmed-Fawzy-Coder/opencodex/issues"
   },
   "license": "MIT"
 }

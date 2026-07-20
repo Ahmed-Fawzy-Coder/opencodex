@@ -94,6 +94,7 @@ describe("GET /api/usage", () => {
       expect(body).toHaveProperty("days");
       expect(body).toHaveProperty("models");
       expect(body).toHaveProperty("providers");
+      expect(body).toHaveProperty("mcpSavings");
       expect(Array.isArray(body.days)).toBe(true);
       expect(Array.isArray(body.models)).toBe(true);
       expect(Array.isArray(body.providers)).toBe(true);
