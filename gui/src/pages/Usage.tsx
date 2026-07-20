@@ -663,6 +663,7 @@ export default function Usage({ apiBase }: { apiBase: string }) {
   const [data, setData] = useState<UsageResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [modelQuery, setModelQuery] = useState("");
+  const [resetting, setResetting] = useState(false);
 
   const fetchUsage = useCallback(async (nextRange: Range, nextSurface: UsageSurface, signal: AbortSignal) => {
     setLoading(true);
@@ -716,7 +717,27 @@ export default function Usage({ apiBase }: { apiBase: string }) {
     <>
       <div className="page-head usage-head">
         <h2 id="usage-page-title">{t("usage.title")}</h2>
-        <UsageFilters surface={surface} range={range} onSurface={setSurface} onRange={setRange} t={t} />
+        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+          <UsageFilters surface={surface} range={range} onSurface={setSurface} onRange={setRange} t={t} />
+          <button
+            type="button"
+            className="btn btn-sm btn-ghost"
+            disabled={resetting}
+            onClick={async () => {
+              setResetting(true);
+              try { await fetch("/api/metrics/reset", { method: "POST" }); } catch {}
+              setSurface("all");
+              setRange("all");
+              const ctrl = new AbortController();
+              const res = await fetch(apiBase + "/api/usage?range=all&surface=all", { signal: ctrl.signal });
+              if (res.ok) setData(await res.json());
+              setResetting(false);
+            }}
+            style={{ fontSize: "0.8rem", padding: "0.25rem 0.75rem" }}
+          >
+            {resetting ? "..." : "↺ Reset statistics"}
+          </button>
+        </div>
       </div>
       <p className="page-sub">{t("usage.subtitle")}</p>
 
