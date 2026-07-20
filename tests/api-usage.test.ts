@@ -94,7 +94,14 @@ describe("GET /api/usage", () => {
       expect(body).toHaveProperty("days");
       expect(body).toHaveProperty("models");
       expect(body).toHaveProperty("providers");
-      expect(body).toHaveProperty("mcpSavings");
+      expect(body).toHaveProperty("mcpTelemetry");
+      expect(body.mcpControlledBenchmark).toEqual({
+        rounds: 6,
+        withoutMcpInputTokens: 515_612,
+        withMcpInputTokens: 418_309,
+        differenceInputTokens: 97_303,
+        reductionRatio: 97_303 / 515_612,
+      });
       expect(Array.isArray(body.days)).toBe(true);
       expect(Array.isArray(body.models)).toBe(true);
       expect(Array.isArray(body.providers)).toBe(true);

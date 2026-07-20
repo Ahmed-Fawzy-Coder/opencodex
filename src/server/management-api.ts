@@ -60,7 +60,15 @@ export const VERSION = (() => {
   }
 })();
 
-async function fetchLinuxMcpSavings(range: string): Promise<Record<string, unknown> | null> {
+const LINUX_MCP_CONTROLLED_BENCHMARK = Object.freeze({
+  rounds: 6,
+  withoutMcpInputTokens: 515_612,
+  withMcpInputTokens: 418_309,
+  differenceInputTokens: 97_303,
+  reductionRatio: 97_303 / 515_612,
+});
+
+async function fetchLinuxMcpTelemetry(range: string): Promise<Record<string, unknown> | null> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 250);
   try {
@@ -75,13 +83,10 @@ async function fetchLinuxMcpSavings(range: string): Promise<Record<string, unkno
       "calls",
       "measuredCalls",
       "measuredSegments",
-      "truncatedCalls",
+      "boundedCalls",
       "returnedChars",
-      "estimatedUnboundedChars",
-      "estimatedAvoidedChars",
+      "internalDiscardedChars",
       "returnedTokensEstimate",
-      "unboundedTokensEstimate",
-      "avoidedTokensEstimate",
       "generatedAt",
     ];
     if (nonNegativeFields.some(key => (
@@ -89,10 +94,6 @@ async function fetchLinuxMcpSavings(range: string): Promise<Record<string, unkno
       || !Number.isFinite(metrics[key])
       || (metrics[key] as number) < 0
     ))) return null;
-    if (typeof metrics.savingsRatio !== "number"
-      || !Number.isFinite(metrics.savingsRatio)
-      || metrics.savingsRatio < 0
-      || metrics.savingsRatio > 1) return null;
     if (metrics.startedAt !== null
       && (typeof metrics.startedAt !== "number" || !Number.isFinite(metrics.startedAt))) return null;
     if (typeof metrics.method !== "string") return null;
@@ -414,7 +415,11 @@ export async function handleManagementAPI(req: Request, url: URL, config: OcxCon
     const now = Date.now();
     try {
       const usage = summarizeUsage(readUsageEntries(), range, now, surface);
-      return jsonResponse({ ...usage, mcpSavings: await fetchLinuxMcpSavings(range) });
+      return jsonResponse({
+        ...usage,
+        mcpTelemetry: await fetchLinuxMcpTelemetry(range),
+        mcpControlledBenchmark: LINUX_MCP_CONTROLLED_BENCHMARK,
+      });
     } catch {
       return jsonResponse({
         range,
@@ -440,7 +445,8 @@ export async function handleManagementAPI(req: Request, url: URL, config: OcxCon
         days: [],
         models: [],
         providers: [],
-        mcpSavings: await fetchLinuxMcpSavings(range),
+        mcpTelemetry: await fetchLinuxMcpTelemetry(range),
+        mcpControlledBenchmark: LINUX_MCP_CONTROLLED_BENCHMARK,
         error: "read_failed",
       });
     }

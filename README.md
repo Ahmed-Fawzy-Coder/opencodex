@@ -58,17 +58,20 @@ flowchart LR
 
 ## This fork: Linux MCP integration and always-on setup
 
-This fork keeps the full upstream OpenCodex feature set and adds a live **Linux MCP savings** card to `http://localhost:10100/#usage`.
+This fork keeps the full upstream OpenCodex feature set and adds honest Linux MCP telemetry plus a separate controlled benchmark to `http://localhost:10100/#usage`.
 
 The card reads local telemetry from [Ahmed-Fawzy-Coder/linux_mcp](https://github.com/Ahmed-Fawzy-Coder/linux_mcp) and shows:
 
-- estimated tokens available before Linux MCP bounded the payload;
-- estimated tokens returned through MCP;
-- estimated tokens avoided;
-- measured character counts used for the estimate;
-- measured calls and bounded calls.
+- estimated tokens actually returned through MCP;
+- returned characters, measured calls, and bounded calls;
+- internal tool-output characters discarded locally, explicitly not counted as tokens saved;
+- a separate historical six-round benchmark comparing input tokens without and with MCP.
 
-Token values use `4 characters ≈ 1 token`. They are estimates because tokenization differs by model and language. OpenCodex uses a 250ms timeout when reading Linux MCP telemetry; if Linux MCP is unavailable, the normal Usage page continues to work and the card is omitted.
+The live card never reports unbounded tokens, avoided tokens, or a savings percentage. Raw grep results, command output, and full file text used internally are not a valid estimate of what another tool would have sent to the model. The returned-token value uses `4 characters ≈ 1 token` and is labeled as an estimate because tokenization differs by model and language.
+
+The controlled benchmark is static: six paired rounds measured `515,612` input tokens without MCP and `418,309` with MCP, a difference of `97,303` tokens (`18.9%`). It is kept separate from live telemetry.
+
+OpenCodex uses a 250ms timeout when reading Linux MCP telemetry; if Linux MCP is unavailable, the normal Usage page and the controlled benchmark continue to work while the live card is omitted.
 
 The Usage page does not poll automatically. Reload it manually or change the `7d`, `30d`, or `All` filter when you want fresh statistics.
 
