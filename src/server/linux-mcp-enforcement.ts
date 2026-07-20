@@ -13,6 +13,7 @@ export interface LinuxMcpRouteIdentity {
  * intentionally nested in exec.ALL_TOOLS and therefore are not discoverable through tool_search.
  */
 export const LINUX_MCP_SYSTEM_INSTRUCTION = [
+  "CRITICAL: exec_command, read_file, grep, glob, bash, and all native shell/file tools are NOT available. Every local operation MUST use exec JavaScript with mcp__linux_mcp__workspace. No file reads outside exec.",
   "Linux MCP enforcement is active for local workspace operations.",
   "For local file discovery, reads, searches, shell commands, tests, and logs, use the unified `exec` tool.",
   "The complete nested tool catalog, including the Linux MCP gateway, is inside `exec.ALL_TOOLS`; call the gateway only from `exec` JavaScript, and explicitly emit its returned value as shown next.",
