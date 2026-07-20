@@ -97,11 +97,13 @@ Enable the universal OpenCodex layer globally in `~/.opencodex/config.json`:
 `enforceLinuxMcp` defaults to `true`. For routed non-OpenAI providers, when Codex supplies the
 unified freeform `exec` tool, OpenCodex makes that surface authoritative for local workspace work:
 native read/search/shell tools and `tool_search` are removed, and the model is instructed to call
-`tools.mcp__linux_mcp__workspace` from `exec.ALL_TOOLS`. If `exec` is absent the policy is a no-op,
-so the original tool catalog remains available as a recovery path. If the gateway remains unavailable
-after one retry, the model may use a nested fallback such as `tools.exec_command` from the same
-`exec.ALL_TOOLS` catalog. Set the option to `false` only when intentionally testing the top-level
-native fallback.
+`tools.mcp__linux_mcp__workspace` from `exec.ALL_TOOLS`. Nested return values must be emitted from
+`exec`; the required pattern is `const result = await tools.mcp__linux_mcp__workspace(...); text(result);`.
+An empty outer script result normally means the model omitted `text(result)`, not that Linux MCP failed.
+If `exec` is absent the policy is a no-op, so the original tool catalog remains available as a recovery
+path. A nested fallback such as `tools.exec_command` is allowed only when the gateway is demonstrably
+absent, throws, or returns an explicit unavailable error after one retry, and its result must be emitted
+the same way. Set the option to `false` only when intentionally testing the top-level native fallback.
 
 For a sanitized enforcement trace during diagnosis, start OpenCodex with
 `OPENCODEX_LINUX_MCP_DEBUG=1`. Trace lines include only provider/model identity, enforcement status,

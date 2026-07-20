@@ -70,6 +70,8 @@ describe("Linux MCP enforcement for routed models", () => {
     expect(parsed.context.systemPrompt).toContain(LINUX_MCP_SYSTEM_INSTRUCTION);
     expect(LINUX_MCP_SYSTEM_INSTRUCTION).toContain("exec.ALL_TOOLS");
     expect(LINUX_MCP_SYSTEM_INSTRUCTION).toContain("tools.mcp__linux_mcp__workspace");
+    expect(LINUX_MCP_SYSTEM_INSTRUCTION).toContain("text(result)");
+    expect(LINUX_MCP_SYSTEM_INSTRUCTION).toContain("an empty outer `exec` result does not prove the nested tool failed");
     expect(LINUX_MCP_SYSTEM_INSTRUCTION).toContain("Do not use `tool_search`");
 
     const raw = parsed._rawBody as Record<string, unknown>;
@@ -202,7 +204,90 @@ describe("Linux MCP enforcement for routed models", () => {
       const upstreamMessages = upstreamBody?.messages as Array<{ role?: string; content?: string }>;
       expect(upstreamMessages.find(message => message.role === "system")?.content).toContain("exec.ALL_TOOLS");
       expect(upstreamMessages.find(message => message.role === "system")?.content).toContain("tools.mcp__linux_mcp__workspace");
+      expect(upstreamMessages.find(message => message.role === "system")?.content).toContain("text(result)");
       expect(upstreamMessages.find(message => message.role === "system")?.content).toContain("tools.exec_command");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("replays an emitted nested Linux MCP result from custom exec into the next DeepSeek turn", async () => {
+    const config: OcxConfig = {
+      port: 10100,
+      providers: {
+        deepseek: {
+          adapter: "openai-chat",
+          baseUrl: "https://api.deepseek.test/v1",
+          authMode: "key",
+          apiKey: "test-key",
+        },
+      },
+      defaultProvider: "deepseek",
+      enforceLinuxMcp: true,
+    };
+    const originalFetch = globalThis.fetch;
+    let upstreamBody: Record<string, unknown> | undefined;
+    globalThis.fetch = async (_input, init) => {
+      upstreamBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response(JSON.stringify({
+        id: "chatcmpl-nested-result",
+        object: "chat.completion",
+        created: 1,
+        model: "deepseek-v4-pro",
+        choices: [{ index: 0, message: { role: "assistant", content: "package read" }, finish_reason: "stop" }],
+        usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+      }), { headers: { "content-type": "application/json" } });
+    };
+
+    try {
+      const nestedResult = JSON.stringify({
+        content: [{ type: "text", text: '{"name":"@bitkyc08/opencodex","version":"2.8.1"}' }],
+      });
+      const response = await handleResponses(new Request("http://localhost/v1/responses", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          model: "deepseek/deepseek-v4-pro",
+          input: [
+            { type: "message", role: "user", content: [{ type: "input_text", text: "Read package.json" }] },
+            {
+              type: "custom_tool_call",
+              call_id: "call_exec_linux_mcp",
+              name: "exec",
+              input: 'const result = await tools.mcp__linux_mcp__workspace({ action: "read_file", arguments: { path: "/repo/package.json", offset: 0, length: 160 } }); text(result);',
+            },
+            {
+              type: "custom_tool_call_output",
+              call_id: "call_exec_linux_mcp",
+              output: [
+                { type: "input_text", text: "Script completed\nWall time 0.1 seconds\nOutput:\n" },
+                { type: "input_text", text: nestedResult },
+              ],
+            },
+          ],
+          stream: false,
+          tools: [capturedExec(), fn("exec_command"), fn("read_file"), { type: "tool_search" }],
+        }),
+      }), config, { model: "", provider: "" });
+
+      expect(response.status).toBe(200);
+      const upstreamMessages = upstreamBody?.messages as Array<{
+        role?: string;
+        content?: string;
+        tool_call_id?: string;
+        tool_calls?: Array<{ id?: string; function?: { name?: string; arguments?: string } }>;
+      }>;
+      const assistantCallIndex = upstreamMessages.findIndex(message =>
+        message.role === "assistant" && message.tool_calls?.[0]?.id === "call_exec_linux_mcp"
+      );
+      expect(assistantCallIndex).toBeGreaterThanOrEqual(0);
+      expect(upstreamMessages[assistantCallIndex]?.tool_calls?.[0]?.function?.name).toBe("exec");
+      expect(upstreamMessages[assistantCallIndex]?.tool_calls?.[0]?.function?.arguments).toContain("text(result)");
+      expect(upstreamMessages[assistantCallIndex + 1]).toEqual({
+        role: "tool",
+        tool_call_id: "call_exec_linux_mcp",
+        content: "Script completed\nWall time 0.1 seconds\nOutput:\n" + nestedResult,
+      });
     } finally {
       globalThis.fetch = originalFetch;
     }

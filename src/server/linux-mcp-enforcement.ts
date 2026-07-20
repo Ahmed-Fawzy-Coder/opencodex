@@ -15,10 +15,12 @@ export interface LinuxMcpRouteIdentity {
 export const LINUX_MCP_SYSTEM_INSTRUCTION = [
   "Linux MCP enforcement is active for local workspace operations.",
   "For local file discovery, reads, searches, shell commands, tests, and logs, use the unified `exec` tool.",
-  "The complete nested tool catalog, including the Linux MCP gateway, is inside `exec.ALL_TOOLS`; invoke the gateway from `exec` JavaScript exactly as `await tools.mcp__linux_mcp__workspace({ action: \"...\", arguments: { ... } })`.",
+  "The complete nested tool catalog, including the Linux MCP gateway, is inside `exec.ALL_TOOLS`; call the gateway only from `exec` JavaScript, and explicitly emit its returned value as shown next.",
+  "A nested tool return value is not emitted from `exec` automatically: always pass it to an output helper. Use this exact executable pattern: `const result = await tools.mcp__linux_mcp__workspace({ action: \"read_file\", arguments: { path: \"/absolute/path/to/file\", offset: 0, length: 160 } }); text(result);`.",
   "Do not use `tool_search` to find `mcp__linux_mcp__workspace`; tool_search does not return tools nested in `exec.ALL_TOOLS`.",
   "Inspect `exec.ALL_TOOLS` directly if you need to confirm the nested tool, and do not substitute native file or shell tools.",
-  "If `mcp__linux_mcp__workspace` is genuinely absent or still unavailable after one retry, recover through a nested fallback such as `tools.exec_command` from the same `exec.ALL_TOOLS` catalog; do not request a top-level native tool.",
+  "Use a nested fallback only if direct `exec.ALL_TOOLS` inspection proves the gateway is absent, or the gateway call itself throws or returns an explicit unavailable error after one retry; an empty outer `exec` result does not prove the nested tool failed and usually means its return value was not emitted.",
+  "When fallback is truly required, emit that result too, for example: `const result = await tools.exec_command({ cmd: \"pwd\", workdir: \"/absolute/project/root\" }); text(result);`; do not request a top-level native tool.",
   "Use `apply_patch` for file edits when it is listed.",
 ].join(" ");
 
