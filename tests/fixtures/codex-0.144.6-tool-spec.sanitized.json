@@ -1,0 +1,48 @@
+{
+  "capture": {
+    "client": "codex-cli 0.144.6",
+    "transport": "responses websocket",
+    "sanitization": "Headers, request content, descriptions, and grammar definitions were not retained.",
+    "execDescriptionContainsAllTools": false,
+    "execDescriptionContainsLinuxMcpGateway": false
+  },
+  "request": {
+    "model": "deepseek/deepseek-v4-pro",
+    "input": "[sanitized]",
+    "tools": [
+      {
+        "type": "custom",
+        "name": "exec",
+        "description": "[sanitized real Codex exec description: no nested catalog names]",
+        "format": {
+          "type": "grammar",
+          "syntax": "lark",
+          "definition": "start: /[\\s\\S]+/"
+        }
+      },
+      {
+        "type": "function",
+        "name": "exec_command",
+        "description": "[sanitized]",
+        "parameters": { "type": "object" }
+      },
+      {
+        "type": "function",
+        "name": "read_file",
+        "description": "[sanitized]",
+        "parameters": { "type": "object" }
+      },
+      {
+        "type": "function",
+        "name": "search_files",
+        "description": "[sanitized]",
+        "parameters": { "type": "object" }
+      },
+      {
+        "type": "tool_search",
+        "description": "[sanitized]",
+        "parameters": { "type": "object" }
+      }
+    ]
+  }
+}

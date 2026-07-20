@@ -1,7 +1,5 @@
 import { isAllowedToolChoice, type OcxParsedRequest, type OcxProviderConfig, type OcxToolChoice } from "../types";
 
-const LINUX_MCP_GATEWAY_TOOL_NAME = "mcp__linux_mcp__workspace";
-const EXEC_NESTED_TOOL_CATALOG_NAME = "ALL_TOOLS";
 const OPENAI_PROVIDER_NAMES = new Set(["openai", "openai-apikey", "openai-multi", "chatgpt"]);
 
 export interface LinuxMcpRouteIdentity {
@@ -20,6 +18,7 @@ export const LINUX_MCP_SYSTEM_INSTRUCTION = [
   "The complete nested tool catalog, including the Linux MCP gateway, is inside `exec.ALL_TOOLS`; invoke the gateway from `exec` JavaScript exactly as `await tools.mcp__linux_mcp__workspace({ action: \"...\", arguments: { ... } })`.",
   "Do not use `tool_search` to find `mcp__linux_mcp__workspace`; tool_search does not return tools nested in `exec.ALL_TOOLS`.",
   "Inspect `exec.ALL_TOOLS` directly if you need to confirm the nested tool, and do not substitute native file or shell tools.",
+  "If `mcp__linux_mcp__workspace` is genuinely absent or still unavailable after one retry, recover through a nested fallback such as `tools.exec_command` from the same `exec.ALL_TOOLS` catalog; do not request a top-level native tool.",
   "Use `apply_patch` for file edits when it is listed.",
 ].join(" ");
 
@@ -50,51 +49,6 @@ function isBlockedWhenEnforcedToolName(name: string): boolean {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function containsLinuxMcpCapabilitySignal(value: unknown, seen = new Set<object>()): boolean {
-  if (typeof value === "string") {
-    if (value.includes(LINUX_MCP_GATEWAY_TOOL_NAME)) return true;
-    return /\bALL_TOOLS\b[\s\S]{0,160}\b(?:catalog|metadata|nested tools?)\b/i.test(value)
-      || /\b(?:catalog|metadata|nested tools?)\b[\s\S]{0,160}\bALL_TOOLS\b/i.test(value);
-  }
-  if (typeof value !== "object" || value === null || seen.has(value)) return false;
-  seen.add(value);
-  return Object.entries(value).some(([key, nested]) => key === EXEC_NESTED_TOOL_CATALOG_NAME
-    || containsLinuxMcpCapabilitySignal(nested, seen));
-}
-
-function isDeclaredLinuxMcpGateway(spec: unknown): boolean {
-  if (!isRecord(spec)) return false;
-  if (spec.name === LINUX_MCP_GATEWAY_TOOL_NAME) return true;
-  if (spec.type !== "namespace" || spec.name !== "mcp__linux_mcp" || !Array.isArray(spec.tools)) return false;
-  return spec.tools.some(tool => isRecord(tool) && tool.name === "workspace");
-}
-
-function rawRequestToolSpecs(parsed: OcxParsedRequest): unknown[] {
-  if (!isRecord(parsed._rawBody)) return [];
-  const specs = Array.isArray(parsed._rawBody.tools) ? [...parsed._rawBody.tools] : [];
-  if (!Array.isArray(parsed._rawBody.input)) return specs;
-  for (const item of parsed._rawBody.input) {
-    if (isRecord(item) && item.type === "additional_tools" && Array.isArray(item.tools)) specs.push(...item.tools);
-  }
-  return specs;
-}
-
-/**
- * A generic custom/freeform exec tool is not proof that its nested runtime owns Linux MCP. Use the
- * raw request because the parser intentionally drops custom-tool format/metadata. Exec must expose
- * its ALL_TOOLS nested catalog or name the gateway in its description/format/metadata (the real
- * Codex contract), or the gateway must be explicitly declared in the request tool manifest.
- * System/developer prompt text is ignored.
- */
-function hasLinuxMcpGatewayCapability(parsed: OcxParsedRequest): boolean {
-  const specs = rawRequestToolSpecs(parsed);
-  return specs.some(spec => isRecord(spec)
-    && spec.type === "custom"
-    && spec.name === "exec"
-    && containsLinuxMcpCapabilitySignal(spec))
-    || specs.some(isDeclaredLinuxMcpGateway);
 }
 
 function isNativeOpenAIRoute(route: LinuxMcpRouteIdentity): boolean {
@@ -179,9 +133,10 @@ export interface LinuxMcpEnforcementResult {
 }
 
 /**
- * Prefer the nested Linux MCP gateway only for routed, non-OpenAI providers and only when the
- * custom/freeform unified exec tool is actually available. The availability guard is the recovery
- * path: if exec disappears on a later turn, native tools and the original prompt remain untouched.
+ * `enforceLinuxMcp` plus Codex's custom/freeform exec surface is the capability contract. The real
+ * Codex wire spec intentionally does not enumerate exec's nested ALL_TOOLS catalog, so inspecting
+ * its description/grammar cannot prove or disprove that Linux MCP is registered. If exec disappears
+ * on a later turn, native tools and the original prompt remain untouched as the recovery path.
  */
 export function applyLinuxMcpEnforcement(
   parsed: OcxParsedRequest,
@@ -190,7 +145,7 @@ export function applyLinuxMcpEnforcement(
 ): LinuxMcpEnforcementResult {
   const tools = parsed.context.tools ?? [];
   const hasUnifiedExec = tools.some(tool => !tool.namespace && tool.name === "exec" && tool.freeform === true);
-  if (!enabled || isNativeOpenAIRoute(route) || !hasUnifiedExec || !hasLinuxMcpGatewayCapability(parsed)) {
+  if (!enabled || isNativeOpenAIRoute(route) || !hasUnifiedExec) {
     return { applied: false, removedToolNames: [] };
   }
 

@@ -6,6 +6,7 @@ import {
 } from "../src/server/linux-mcp-enforcement";
 import { handleResponses } from "../src/server/responses";
 import type { OcxConfig } from "../src/types";
+import realCodexToolSpec from "./fixtures/codex-0.144.6-tool-spec.sanitized.json";
 
 const custom = (name: string) => ({ type: "custom", name, description: `${name} tool` });
 const linuxExec = () => ({
@@ -14,11 +15,7 @@ const linuxExec = () => ({
   description: "Run JavaScript with nested tools, including tools.mcp__linux_mcp__workspace.",
   format: { type: "grammar", syntax: "lark", definition: "start: /[\\s\\S]+/" },
 });
-const catalogExec = () => ({
-  type: "custom",
-  name: "exec",
-  description: "Run JavaScript; ALL_TOOLS contains metadata for the enabled nested tool catalog.",
-});
+const capturedExec = () => structuredClone(realCodexToolSpec.request.tools[0]);
 const fn = (name: string) => ({ type: "function", name, description: `${name} tool`, parameters: { type: "object" } });
 const route = (providerName: string, adapter = "openai-chat", baseUrl = "https://example.test/v1", modelId = "model-x") => ({
   providerName,
@@ -108,32 +105,29 @@ describe("Linux MCP enforcement for routed models", () => {
     expect(((parsed._rawBody as { tools: Array<{ type?: string }> }).tools).some(tool => tool.type === "tool_search")).toBe(true);
   });
 
-  test("keeps the native catalog when custom exec does not prove the Linux gateway is available", () => {
+  test("accepts the sanitized real Codex exec spec without relying on description capability text", () => {
+    expect(realCodexToolSpec.capture.execDescriptionContainsAllTools).toBe(false);
+    expect(realCodexToolSpec.capture.execDescriptionContainsLinuxMcpGateway).toBe(false);
+    const parsed = parseRequest(structuredClone(realCodexToolSpec.request));
+
+    expect(applyLinuxMcpEnforcement(parsed, route("deepseek", "openai-chat", "https://api.deepseek.com", "deepseek-v4-pro"))).toEqual({
+      applied: true,
+      removedToolNames: ["exec_command", "read_file", "search_files", "tool_search"],
+    });
+    expect(parsed.context.tools?.map(tool => tool.name)).toEqual(["exec"]);
+  });
+
+  test("keeps the native catalog when exec is not the custom freeform surface", () => {
     const parsed = parseRequest({
       model: "deepseek/deepseek-v4-pro",
-      instructions: "mcp__linux_mcp__workspace appears only in prompt text",
       input: "inspect",
-      tools: [custom("exec"), fn("exec_command"), fn("read_file"), { type: "tool_search" }],
+      tools: [fn("exec"), fn("exec_command"), fn("read_file"), { type: "tool_search" }],
     });
     const originalRaw = JSON.stringify(parsed._rawBody);
 
-    expect(applyLinuxMcpEnforcement(parsed, route("deepseek", "openai-chat", "https://api.deepseek.com", "deepseek-v4-pro"))).toEqual({
-      applied: false,
-      removedToolNames: [],
-    });
+    expect(applyLinuxMcpEnforcement(parsed, route("deepseek"))).toEqual({ applied: false, removedToolNames: [] });
     expect(parsed.context.tools?.map(tool => tool.name)).toEqual(["exec", "exec_command", "read_file", "tool_search"]);
     expect(JSON.stringify(parsed._rawBody)).toBe(originalRaw);
-  });
-
-  test("accepts the real exec ALL_TOOLS catalog contract as a capability signal", () => {
-    const parsed = parseRequest({
-      model: "deepseek/deepseek-v4-pro",
-      input: "inspect",
-      tools: [catalogExec(), fn("exec_command"), { type: "tool_search" }],
-    });
-
-    expect(applyLinuxMcpEnforcement(parsed, route("deepseek")).applied).toBe(true);
-    expect(parsed.context.tools?.map(tool => tool.name)).toEqual(["exec"]);
   });
 
   test("uses route identity instead of hostname for OpenAI Responses, Azure OpenAI, and routed chat providers", () => {
@@ -198,7 +192,7 @@ describe("Linux MCP enforcement for routed models", () => {
           model: "custom/model-x",
           input: "inspect",
           stream: false,
-          tools: [linuxExec(), custom("apply_patch"), fn("exec_command"), fn("read_file"), fn("grep"), fn("glob"), { type: "tool_search" }],
+          tools: [capturedExec(), custom("apply_patch"), fn("exec_command"), fn("read_file"), fn("grep"), fn("glob"), { type: "tool_search" }],
         }),
       }), config, { model: "", provider: "" });
 
@@ -208,6 +202,7 @@ describe("Linux MCP enforcement for routed models", () => {
       const upstreamMessages = upstreamBody?.messages as Array<{ role?: string; content?: string }>;
       expect(upstreamMessages.find(message => message.role === "system")?.content).toContain("exec.ALL_TOOLS");
       expect(upstreamMessages.find(message => message.role === "system")?.content).toContain("tools.mcp__linux_mcp__workspace");
+      expect(upstreamMessages.find(message => message.role === "system")?.content).toContain("tools.exec_command");
     } finally {
       globalThis.fetch = originalFetch;
     }

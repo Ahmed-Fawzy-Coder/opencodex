@@ -852,8 +852,9 @@ export async function handleResponses(
 
   // Routed non-OpenAI models receive custom `exec` as a function, while Linux MCP remains nested
   // inside exec.ALL_TOOLS. When that unified surface is present, make it authoritative: hide flat
-  // native read/search/shell competitors and inject a system-level invocation contract. Unless the
-  // raw exec spec/manifest proves that nested capability, preserve the original catalog for recovery.
+  // native read/search/shell competitors and inject a system-level invocation contract. Codex does
+  // not enumerate exec.ALL_TOOLS in the wire spec; enforceLinuxMcp + freeform exec is the contract.
+  // A turn without exec preserves the original catalog for recovery.
   applyLinuxMcpEnforcement(parsed, route, config.enforceLinuxMcp !== false);
 
   // Fast mode override: when config.fastMode is explicitly set, inject or strip
