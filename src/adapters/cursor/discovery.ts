@@ -200,4 +200,3 @@ export function cursorModelReasoningEfforts(
     ]),
   );
 }
-  if (id.startsWith("gpt-5.6-")) return CONTEXT_272K;
