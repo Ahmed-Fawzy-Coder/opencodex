@@ -60,14 +60,6 @@ export const VERSION = (() => {
   }
 })();
 
-const LINUX_MCP_CONTROLLED_BENCHMARK = Object.freeze({
-  rounds: 6,
-  withoutMcpInputTokens: 515_612,
-  withMcpInputTokens: 418_309,
-  differenceInputTokens: 97_303,
-  reductionRatio: 97_303 / 515_612,
-});
-
 async function fetchLinuxMcpTelemetry(range: string): Promise<Record<string, unknown> | null> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 250);
@@ -86,7 +78,10 @@ async function fetchLinuxMcpTelemetry(range: string): Promise<Record<string, unk
       "boundedCalls",
       "returnedChars",
       "internalDiscardedChars",
+      "estimatedBaselineChars",
+      "estimatedSavedChars",
       "returnedTokensEstimate",
+      "estimatedSavedTokens",
       "generatedAt",
     ];
     if (nonNegativeFields.some(key => (
@@ -94,6 +89,10 @@ async function fetchLinuxMcpTelemetry(range: string): Promise<Record<string, unk
       || !Number.isFinite(metrics[key])
       || (metrics[key] as number) < 0
     ))) return null;
+    if (typeof metrics.estimatedSavingsRatio !== "number"
+      || !Number.isFinite(metrics.estimatedSavingsRatio)
+      || metrics.estimatedSavingsRatio < 0
+      || metrics.estimatedSavingsRatio > 1) return null;
     if (metrics.startedAt !== null
       && (typeof metrics.startedAt !== "number" || !Number.isFinite(metrics.startedAt))) return null;
     if (typeof metrics.method !== "string") return null;
@@ -103,6 +102,17 @@ async function fetchLinuxMcpTelemetry(range: string): Promise<Record<string, unk
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function linuxMcpEstimate(telemetry: Record<string, unknown> | null): Record<string, unknown> {
+  return {
+    active: telemetry !== null,
+    callsSinceReset: telemetry ? telemetry.measuredCalls as number : 0,
+    estimatedBeforeTokens: telemetry ? Math.ceil((telemetry.estimatedBaselineChars as number) / 4) : 0,
+    estimatedReturnedTokens: telemetry ? telemetry.returnedTokensEstimate as number : 0,
+    estimatedSavingsRatio: telemetry ? telemetry.estimatedSavingsRatio as number : 0,
+    estimatedSavedTokens: telemetry ? telemetry.estimatedSavedTokens as number : 0,
+  };
 }
 
 export interface ManagementApiDeps {
@@ -415,12 +425,13 @@ export async function handleManagementAPI(req: Request, url: URL, config: OcxCon
     const now = Date.now();
     try {
       const usage = summarizeUsage(readUsageEntries(), range, now, surface);
+      const telemetry = await fetchLinuxMcpTelemetry(range);
       return jsonResponse({
         ...usage,
-        mcpTelemetry: await fetchLinuxMcpTelemetry(range),
-        mcpControlledBenchmark: LINUX_MCP_CONTROLLED_BENCHMARK,
+        mcpEstimate: linuxMcpEstimate(telemetry),
       });
     } catch {
+      const telemetry = await fetchLinuxMcpTelemetry(range);
       return jsonResponse({
         range,
         surface,
@@ -445,8 +456,7 @@ export async function handleManagementAPI(req: Request, url: URL, config: OcxCon
         days: [],
         models: [],
         providers: [],
-        mcpTelemetry: await fetchLinuxMcpTelemetry(range),
-        mcpControlledBenchmark: LINUX_MCP_CONTROLLED_BENCHMARK,
+        mcpEstimate: linuxMcpEstimate(telemetry),
         error: "read_failed",
       });
     }

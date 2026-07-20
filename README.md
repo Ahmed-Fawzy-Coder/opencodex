@@ -58,20 +58,19 @@ flowchart LR
 
 ## This fork: Linux MCP integration and always-on setup
 
-This fork keeps the full upstream OpenCodex feature set and adds honest Linux MCP telemetry plus a separate controlled benchmark to `http://localhost:10100/#usage`.
+This fork keeps the full upstream OpenCodex feature set and adds one simple Linux MCP savings card to `http://localhost:10100/#usage`.
 
 The card reads local telemetry from [Ahmed-Fawzy-Coder/linux_mcp](https://github.com/Ahmed-Fawzy-Coder/linux_mcp) and shows:
 
-- estimated tokens actually returned through MCP;
-- returned characters, measured calls, and bounded calls;
-- internal tool-output characters discarded locally, explicitly not counted as tokens saved;
-- a separate historical six-round benchmark comparing input tokens without and with MCP.
+- current Linux MCP status;
+- a dynamic estimated savings percentage since the last reset;
+- estimated tokens before MCP and estimated tokens actually returned;
+- estimated tokens saved;
+- calls since reset.
 
-The live card never reports unbounded tokens, avoided tokens, or a savings percentage. Raw grep results, command output, and full file text used internally are not a valid estimate of what another tool would have sent to the model. The returned-token value uses `4 characters ≈ 1 token` and is labeled as an estimate because tokenization differs by model and language.
+The estimate is calculated entirely from calls made after the current telemetry reset. Each measured operation caps its native-equivalent baseline at 40,000 characters, then compares that baseline with the compact MCP payload. This prevents raw local output from creating an absurd near-100% result. Token estimates use `4 characters ≈ 1 token`; no historical benchmark data is displayed or applied.
 
-The controlled benchmark is static: six paired rounds measured `515,612` input tokens without MCP and `418,309` with MCP, a difference of `97,303` tokens (`18.9%`). It is kept separate from live telemetry.
-
-OpenCodex uses a 250ms timeout when reading Linux MCP telemetry; if Linux MCP is unavailable, the normal Usage page and the controlled benchmark continue to work while the live card is omitted.
+OpenCodex uses a 250ms timeout when reading Linux MCP telemetry. If Linux MCP is unavailable, the card shows an unavailable status with zero live estimates while the rest of the Usage page continues to work.
 
 The Usage page does not poll automatically. Reload it manually or change the `7d`, `30d`, or `All` filter when you want fresh statistics.
 
