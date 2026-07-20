@@ -56,23 +56,52 @@ flowchart LR
   cooldown --> quota
 ```
 
-## This fork: Linux MCP integration and always-on setup
+## This fork: Ultimate Context, Linux MCP, and always-on setup
 
-This fork keeps the full upstream OpenCodex feature set and adds one simple Linux MCP savings card to `http://localhost:10100/#usage`.
+This fork keeps the upstream OpenCodex feature set and adds a local, reversible context-efficiency layer. It works at two disjoint boundaries:
 
-The card reads local telemetry from [Ahmed-Fawzy-Coder/linux_mcp](https://github.com/Ahmed-Fawzy-Coder/linux_mcp) and shows:
+- [Ahmed-Fawzy-Coder/linux_mcp](https://github.com/Ahmed-Fawzy-Coder/linux_mcp) bounds project search, file reads, commands, tests, and logs;
+- OpenCodex covers large results from other native tools, plugins, MCP servers, browser tools, and subagents.
 
-- current Linux MCP status;
-- a dynamic estimated savings percentage since the last reset;
-- estimated tokens before MCP and estimated tokens actually returned;
-- estimated tokens saved;
-- calls since reset.
+Large text results are stored locally behind opaque content-addressed handles. The model receives a deterministic preview plus a bounded retrieval command. Small results, images, encrypted blocks, unknown items, and Linux MCP results already reduced at the first boundary are not transformed.
 
-The estimate is calculated entirely from calls made after the current telemetry reset. Each measured operation caps its native-equivalent baseline at 40,000 characters, then compares that baseline with the compact MCP payload. This prevents raw local output from creating an absurd near-100% result. Token estimates use `4 characters ≈ 1 token`; no historical benchmark data is displayed or applied.
+The single **Ultimate Context** panel at `http://localhost:10100/#usage` shows live values since reset:
 
-OpenCodex uses a 250ms timeout when reading Linux MCP telemetry. If Linux MCP is unavailable, the card shows an unavailable status with zero live estimates while the rest of the Usage page continues to work.
+- the calculated estimated savings percentage;
+- estimated tokens before, returned, and saved;
+- processed and reduced results, retrievals, cache hits, and average added latency;
+- an optional Linux MCP versus other-tools breakdown.
+
+The panel never imports a fixed benchmark percentage and does not alter provider-reported `Total tokens`. Token estimates use `4 characters or bytes ≈ 1 token`. OpenCodex reads Linux MCP metrics with a short timeout; a telemetry failure cannot fail the Usage page.
 
 The Usage page does not poll automatically. Reload it manually or change the `7d`, `30d`, or `All` filter when you want fresh statistics.
+
+Enable the universal OpenCodex layer globally in `~/.opencodex/config.json`:
+
+```json
+{
+  "ultimateContext": {
+    "enabled": true,
+    "mode": "auto",
+    "thresholdBytes": 8192,
+    "previewBytes": 2048,
+    "ttlMs": 86400000,
+    "maxEntries": 512,
+    "maxBytes": 67108864,
+    "retrievalMaxBytes": 12000
+  }
+}
+```
+
+`auto` preserves small results and reduces only results at or above the threshold. `off` is the immediate kill switch. `compact` forces every eligible textual result through the reversible store and is intended for testing, not the global default.
+
+Retrieve an omitted snapshot chunk locally:
+
+```bash
+ocx context get ctx_HANDLE --offset 0 --max-bytes 12000
+```
+
+The compact result includes the exact command and ETag needed for conditional retrieval. Handles accept no paths, retrieval is size-bounded, and snapshot files are stored with private permissions under `~/.opencodex/context-results/`.
 
 ### Install this fork from source
 
@@ -178,7 +207,7 @@ Open the combined dashboard:
 http://127.0.0.1:10100/#usage
 ```
 
-The Linux MCP card becomes visible when OpenCodex has usage data and the telemetry endpoint is available.
+The Ultimate Context panel remains available even before provider usage is recorded, so the two local layers can be diagnosed independently.
 
 ### Reset Usage and Linux MCP statistics
 
@@ -188,6 +217,8 @@ This permanently removes the local statistics. Stop both writers before deleting
 systemctl --user stop opencodex-proxy.service
 systemctl --user stop linux-mcp.service linux-mcp.socket
 rm -- ~/.opencodex/usage.jsonl
+rm -- ~/.opencodex/ultimate-context-metrics.json
+rm -rf -- ~/.opencodex/context-results
 rm -- /absolute/path/to/linux_mcp/mcp_server/audit.log
 systemctl --user start linux-mcp.socket linux-mcp.service
 systemctl --user start opencodex-proxy.service

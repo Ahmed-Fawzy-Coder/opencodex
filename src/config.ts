@@ -294,6 +294,17 @@ const providerConfigSchema = z.object({
   codexAccountMode: z.enum(["pool", "direct"]).optional(),
 }).passthrough();
 
+const ultimateContextConfigSchema = z.object({
+  enabled: z.boolean().optional(),
+  mode: z.enum(["off", "auto", "compact"]).optional(),
+  thresholdBytes: z.number().int().positive().max(256 * 1024 * 1024).optional(),
+  previewBytes: z.number().int().positive().max(1024 * 1024).optional(),
+  ttlMs: z.number().int().positive().max(30 * 24 * 60 * 60 * 1_000).optional(),
+  maxEntries: z.number().int().positive().max(100_000).optional(),
+  maxBytes: z.number().int().positive().max(1024 * 1024 * 1024).optional(),
+  retrievalMaxBytes: z.number().int().positive().max(1024 * 1024).optional(),
+}).strict();
+
 const RESERVED_PROVIDER_NAMES = new Set(["__proto__", "prototype", "constructor"]);
 const PROVIDER_NAME_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,62}[A-Za-z0-9])?$/;
 const HEADER_NAME_PATTERN = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
@@ -364,6 +375,7 @@ const configSchema = z.object({
   openaiProviderTierVersion: z.union([z.literal(1), z.literal(2)]).optional(),
   providerContextCaps: z.record(z.string(), z.number().int().positive()).optional(),
   contextCapValue: z.number().int().positive().optional(),
+  ultimateContext: ultimateContextConfigSchema.optional(),
 }).passthrough().superRefine((config, ctx) => {
   for (const name of Object.keys(config.providers)) {
     if (!isValidProviderName(name)) {

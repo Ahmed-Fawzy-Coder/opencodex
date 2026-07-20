@@ -84,6 +84,11 @@ const helpEntries: Record<string, HelpEntry> = {
     summary: "List available models from configured providers.",
     details: ["Shows statically configured models. Providers with liveModels may have additional models at runtime."],
   },
+  context: {
+    usage: "ocx context get <handle> [--offset <bytes>] [--max-bytes <bytes>] [--if-none-match <etag>]",
+    summary: "Retrieve a bounded chunk from a private Ultimate Context snapshot.",
+    details: ["Handles are opaque; paths are never accepted. Output is compact JSON with SHA-256 and ETag metadata."],
+  },
   claude: {
     usage: "ocx claude [claude args...]",
     summary: "Launch Claude Code wired to the proxy (env injection + gateway model discovery).",
@@ -145,6 +150,7 @@ Usage:
   ocx health [--json]          Check proxy health (exit 0=healthy, 1=not)
   ocx provider <sub>          Manage providers (list|add|remove|show|set-default)
   ocx models [--json]         List available models from configured providers
+  ocx context get <handle>    Retrieve a bounded Ultimate Context snapshot chunk
   ocx claude [args...]        Launch Claude Code wired to the proxy (model discovery on)
   ocx help [command]          Show help
   ocx --version | -v          Print version

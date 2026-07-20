@@ -64,13 +64,26 @@ interface UsageProvider {
   shareRatio: number;
 }
 
-interface LinuxMcpEstimate {
+interface ContextSavingsLayer {
   active: boolean;
-  callsSinceReset: number;
+  processedCalls: number;
+  reducedCalls: number;
   estimatedBeforeTokens: number;
   estimatedReturnedTokens: number;
   estimatedSavingsRatio: number;
   estimatedSavedTokens: number;
+  retrievalCalls: number;
+  cacheHits: number;
+  sourceIncompleteCalls: number;
+  errors: number;
+  addedLatencyMs: number;
+}
+
+interface UltimateContextEstimate extends ContextSavingsLayer {
+  layers: {
+    linuxMcp: ContextSavingsLayer;
+    allTools: ContextSavingsLayer;
+  };
 }
 
 interface UsageResponse {
@@ -82,7 +95,7 @@ interface UsageResponse {
   days: UsageDay[];
   models: UsageModel[];
   providers: UsageProvider[];
-  mcpEstimate?: LinuxMcpEstimate;
+  ultimateContext?: UltimateContextEstimate;
   error?: string;
 }
 
@@ -288,42 +301,88 @@ function UsageSummaryCards({
   );
 }
 
-function LinuxMcpCard({ estimate, locale, t }: {
-  estimate: LinuxMcpEstimate;
+function UltimateContextCard({ estimate, locale, t }: {
+  estimate: UltimateContextEstimate;
   locale: Locale;
   t: TFn;
 }) {
   const percent = Math.round(estimate.estimatedSavingsRatio * 1_000) / 10;
+  const averageLatency = estimate.reducedCalls > 0
+    ? estimate.addedLatencyMs / estimate.reducedCalls
+    : 0;
+  const layers = [
+    [t("usage.context.layerLinuxMcp"), estimate.layers.linuxMcp],
+    [t("usage.context.layerAllTools"), estimate.layers.allTools],
+  ] as const;
   return (
-    <section className="panel" style={{ marginTop: 16 }} aria-labelledby="usage-mcp-title">
-      <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
-        <h3 id="usage-mcp-title" className="panel-title">{t("usage.mcp.title")}</h3>
+    <section className="panel usage-context" aria-labelledby="usage-context-title">
+      <div className="usage-context-head">
+        <div>
+          <h3 id="usage-context-title" className="panel-title">{t("usage.context.title")}</h3>
+          <p className="muted text-caption usage-context-note">{t("usage.context.note")}</p>
+        </div>
         <span className={`badge${estimate.active ? " badge-green" : ""}`}>
-          {t(estimate.active ? "usage.mcp.active" : "usage.mcp.inactive")}
+          {t(estimate.active ? "usage.context.active" : "usage.context.inactive")}
         </span>
       </div>
-      <div className="usage-cards usage-cards-3x2" style={{ marginTop: 12 }}>
-        <div className="stat">
-          <div className="muted">{t("usage.mcp.estimatedSavings")}</div>
-          <div className="stat-value">{percent}%</div>
+      <div className="usage-context-summary">
+        <div className="usage-context-rate">
+          <div className="muted">{t("usage.context.estimatedSavings")}</div>
+          <div className="usage-context-rate-value">{percent}%</div>
         </div>
-        <div className="stat">
-          <div className="muted">{t("usage.mcp.estimatedBeforeTokens")}</div>
-          <div className="stat-value">{formatTokens(estimate.estimatedBeforeTokens, locale)}</div>
-        </div>
-        <div className="stat">
-          <div className="muted">{t("usage.mcp.estimatedReturnedTokens")}</div>
-          <div className="stat-value">{formatTokens(estimate.estimatedReturnedTokens, locale)}</div>
-        </div>
-        <div className="stat">
-          <div className="muted">{t("usage.mcp.estimatedSavedTokens")}</div>
-          <div className="stat-value">{formatTokens(estimate.estimatedSavedTokens, locale)}</div>
-        </div>
-        <div className="stat">
-          <div className="muted">{t("usage.mcp.callsSinceReset")}</div>
-          <div className="stat-value">{estimate.callsSinceReset}</div>
-        </div>
+        <dl className="usage-context-tokens">
+          <div>
+            <dt>{t("usage.context.estimatedBeforeTokens")}</dt>
+            <dd>{formatTokens(estimate.estimatedBeforeTokens, locale)}</dd>
+          </div>
+          <div>
+            <dt>{t("usage.context.estimatedReturnedTokens")}</dt>
+            <dd>{formatTokens(estimate.estimatedReturnedTokens, locale)}</dd>
+          </div>
+          <div>
+            <dt>{t("usage.context.estimatedSavedTokens")}</dt>
+            <dd>{formatTokens(estimate.estimatedSavedTokens, locale)}</dd>
+          </div>
+        </dl>
       </div>
+      <dl className="usage-context-operations">
+        <div><dt>{t("usage.context.processed")}</dt><dd>{estimate.processedCalls}</dd></div>
+        <div><dt>{t("usage.context.reduced")}</dt><dd>{estimate.reducedCalls}</dd></div>
+        <div><dt>{t("usage.context.retrievals")}</dt><dd>{estimate.retrievalCalls}</dd></div>
+        <div><dt>{t("usage.context.cacheHits")}</dt><dd>{estimate.cacheHits}</dd></div>
+        <div><dt>{t("usage.context.avgLatency")}</dt><dd>{averageLatency.toFixed(1)} ms</dd></div>
+      </dl>
+      {(estimate.sourceIncompleteCalls > 0 || estimate.errors > 0) && (
+        <div className="usage-context-warnings" role="status">
+          {estimate.sourceIncompleteCalls > 0 && (
+            <span>{t("usage.context.sourceIncomplete")}: {estimate.sourceIncompleteCalls}</span>
+          )}
+          {estimate.errors > 0 && <span>{t("usage.context.errors")}: {estimate.errors}</span>}
+        </div>
+      )}
+      <details className="usage-context-layers">
+        <summary>{t("usage.context.layers")}</summary>
+        <div className="tbl-wrap">
+          <table className="tbl">
+            <thead><tr>
+              <th>{t("usage.context.layer")}</th>
+              <th>{t("usage.context.estimatedBeforeTokens")}</th>
+              <th>{t("usage.context.estimatedReturnedTokens")}</th>
+              <th>{t("usage.context.estimatedSavedTokens")}</th>
+              <th>{t("usage.context.reduced")}</th>
+            </tr></thead>
+            <tbody>{layers.map(([label, layer]) => (
+              <tr key={label}>
+                <td>{label}</td>
+                <td>{formatTokens(layer.estimatedBeforeTokens, locale)}</td>
+                <td>{formatTokens(layer.estimatedReturnedTokens, locale)}</td>
+                <td>{formatTokens(layer.estimatedSavedTokens, locale)}</td>
+                <td>{layer.reducedCalls}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      </details>
     </section>
   );
 }
@@ -636,16 +695,24 @@ export default function Usage({ apiBase }: { apiBase: string }) {
 
       {loading && !data ? (
         <EmptyState title={t("usage.loading")} />
-      ) : !data || data.summary.requests === 0 ? (
+      ) : !data ? (
         <EmptyState title={t("usage.empty")} />
       ) : (
         <>
-          <UsageSummaryCards summary={data.summary} activeDays={activeDays} locale={locale} t={t} />
-          {data.mcpEstimate && <LinuxMcpCard estimate={data.mcpEstimate} locale={locale} t={t} />}
-          <UsageHeatmapPanel range={range} heatmap={heatmap} weekBars={weekBars} locale={locale} t={t} />
-          <UsageModelsTable models={filteredModels} modelQuery={modelQuery} onModelQuery={setModelQuery} locale={locale} t={t} />
-          <UsageProvidersTable providers={sortedProviders} locale={locale} t={t} />
-          <UsageCoveragePanel summary={data.summary} t={t} />
+          {data.summary.requests > 0 && (
+            <UsageSummaryCards summary={data.summary} activeDays={activeDays} locale={locale} t={t} />
+          )}
+          {data.ultimateContext && <UltimateContextCard estimate={data.ultimateContext} locale={locale} t={t} />}
+          {data.summary.requests === 0 ? (
+            <EmptyState title={t("usage.empty")} />
+          ) : (
+            <>
+              <UsageHeatmapPanel range={range} heatmap={heatmap} weekBars={weekBars} locale={locale} t={t} />
+              <UsageModelsTable models={filteredModels} modelQuery={modelQuery} onModelQuery={setModelQuery} locale={locale} t={t} />
+              <UsageProvidersTable providers={sortedProviders} locale={locale} t={t} />
+              <UsageCoveragePanel summary={data.summary} t={t} />
+            </>
+          )}
         </>
       )}
     </>

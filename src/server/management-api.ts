@@ -33,6 +33,8 @@ import { DEFAULT_PROVIDER_CONTEXT_CAP, globalContextCapValue, providerContextCap
 import { readUsageEntries } from "../usage/log";
 import { getUsageDebugLogEntries } from "../usage/debug";
 import { parseRange, parseUsageSurface, summarizeUsage } from "../usage/summary";
+import { readUltimateContextMetrics } from "../context-results";
+import { summarizeUltimateContext } from "../usage/ultimate-context";
 import { stripCodexRuntimeProviderFields } from "../codex/auth-context";
 import { getProviderRegistryEntry } from "../providers/registry";
 import { getDebugLogEntries } from "../lib/debug-log-buffer";
@@ -96,6 +98,24 @@ async function fetchLinuxMcpTelemetry(range: string): Promise<Record<string, unk
     if (metrics.startedAt !== null
       && (typeof metrics.startedAt !== "number" || !Number.isFinite(metrics.startedAt))) return null;
     if (typeof metrics.method !== "string") return null;
+    const optionalNonNegativeFields = [
+      "contextStored",
+      "contextReduced",
+      "contextRetrievals",
+      "contextNotModified",
+      "contextSourceIncomplete",
+      "contextStoredChars",
+      "contextOriginalChars",
+      "contextReducedChars",
+      "contextReturnedChars",
+      "contextSavedChars",
+      "contextRetrievalChars",
+    ];
+    if (optionalNonNegativeFields.some(key => metrics[key] !== undefined && (
+      typeof metrics[key] !== "number"
+      || !Number.isFinite(metrics[key])
+      || (metrics[key] as number) < 0
+    ))) return null;
     return metrics;
   } catch {
     return null;
@@ -113,6 +133,21 @@ function linuxMcpEstimate(telemetry: Record<string, unknown> | null): Record<str
     estimatedSavingsRatio: telemetry ? telemetry.estimatedSavingsRatio as number : 0,
     estimatedSavedTokens: telemetry ? telemetry.estimatedSavedTokens as number : 0,
   };
+}
+
+function ultimateContextEstimate(
+  telemetry: Record<string, unknown> | null,
+  config: OcxConfig,
+): ReturnType<typeof summarizeUltimateContext> {
+  let universalMetrics: Record<string, unknown> | null = null;
+  try {
+    universalMetrics = readUltimateContextMetrics() as unknown as Record<string, unknown>;
+  } catch {
+    universalMetrics = null;
+  }
+  const universalActive = config.ultimateContext?.enabled === true
+    && config.ultimateContext.mode !== "off";
+  return summarizeUltimateContext(telemetry, universalMetrics, universalActive);
 }
 
 export interface ManagementApiDeps {
@@ -425,13 +460,14 @@ export async function handleManagementAPI(req: Request, url: URL, config: OcxCon
     const now = Date.now();
     try {
       const usage = summarizeUsage(readUsageEntries(), range, now, surface);
-      const telemetry = await fetchLinuxMcpTelemetry(range);
+      const telemetry = await fetchLinuxMcpTelemetry("all");
       return jsonResponse({
         ...usage,
         mcpEstimate: linuxMcpEstimate(telemetry),
+        ultimateContext: ultimateContextEstimate(telemetry, config),
       });
     } catch {
-      const telemetry = await fetchLinuxMcpTelemetry(range);
+      const telemetry = await fetchLinuxMcpTelemetry("all");
       return jsonResponse({
         range,
         surface,
@@ -457,6 +493,7 @@ export async function handleManagementAPI(req: Request, url: URL, config: OcxCon
         models: [],
         providers: [],
         mcpEstimate: linuxMcpEstimate(telemetry),
+        ultimateContext: ultimateContextEstimate(telemetry, config),
         error: "read_failed",
       });
     }

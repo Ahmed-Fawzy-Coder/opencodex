@@ -621,6 +621,10 @@ switch (command) {
     handleModels(args.slice(1));
     break;
   }
+  case "context": {
+    const { handleContextCommand } = await import("./context");
+    process.exit(handleContextCommand(args.slice(1)));
+  }
   case "claude": {
     const { cmdClaude } = await import("./claude");
     // "ocx claude desktop" → write Desktop 3P config

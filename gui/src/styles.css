@@ -848,6 +848,24 @@ dialog.modal-overlay::backdrop {
 
 .usage-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 8px; }
 .usage-cards .stat-value { font-size: var(--text-title); font-weight: var(--weight-semibold); margin-top: 4px; }
+.usage-context { margin-top: 16px; }
+.usage-context-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.usage-context-head .panel-title { margin-bottom: 4px; }
+.usage-context-note { margin: 0; max-width: 70ch; }
+.usage-context-summary { display: grid; grid-template-columns: minmax(160px, 0.7fr) minmax(0, 2.3fr); gap: 24px; align-items: center; padding: 18px 0; border-block: 1px solid var(--border); }
+.usage-context-rate-value { margin-top: 4px; color: var(--green); font-size: clamp(2rem, 4vw, 3rem); font-weight: var(--weight-semibold); line-height: 1; font-variant-numeric: tabular-nums; }
+.usage-context-tokens { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin: 0; }
+.usage-context-tokens div + div { border-inline-start: 1px solid var(--border); padding-inline-start: 18px; }
+.usage-context-tokens dt, .usage-context-operations dt { color: var(--muted); font-size: var(--text-label); }
+.usage-context-tokens dd { margin: 5px 0 0; font-size: var(--text-title); font-weight: var(--weight-semibold); font-variant-numeric: tabular-nums; }
+.usage-context-operations { display: flex; flex-wrap: wrap; gap: 10px 28px; margin: 16px 0 0; }
+.usage-context-operations div { display: inline-flex; align-items: baseline; gap: 7px; }
+.usage-context-operations dd { margin: 0; font-weight: var(--weight-semibold); font-variant-numeric: tabular-nums; }
+.usage-context-warnings { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 14px; color: var(--warning); font-size: var(--text-label); }
+.usage-context-layers { margin-top: 14px; }
+.usage-context-layers summary { color: var(--muted); cursor: pointer; font-size: var(--text-label); width: fit-content; }
+.usage-context-layers[open] summary { margin-bottom: 10px; }
+.usage-context-layers .tbl { min-width: 620px; }
 .usage-head { flex-wrap: wrap; }
 .usage-filters { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
 .usage-segmented { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius-pill); padding: 2px; gap: 2px; background: var(--surface); }
@@ -862,6 +880,9 @@ dialog.modal-overlay::backdrop {
 
 @media (max-width: 760px) {
   .usage-segmented-btn { min-height: var(--control-touch); }
+  .usage-context-summary { grid-template-columns: 1fr; gap: 16px; }
+  .usage-context-tokens { gap: 12px; }
+  .usage-context-tokens div + div { padding-inline-start: 12px; }
   .openai-mode-row { align-items: stretch; flex-direction: column; gap: 6px; }
   .openai-mode-control { width: 100%; }
   .openai-mode-control .usage-segmented-btn { flex: 1 1 0; min-width: 0; }
@@ -869,6 +890,8 @@ dialog.modal-overlay::backdrop {
 
 @media (max-width: 640px) {
   .usage-source-btn .usage-source-label-collapsible { display: none; }
+  .usage-context-tokens { grid-template-columns: 1fr; }
+  .usage-context-tokens div + div { border-inline-start: 0; border-block-start: 1px solid var(--border); padding: 12px 0 0; }
 }
 
 @media (max-width: 360px) {

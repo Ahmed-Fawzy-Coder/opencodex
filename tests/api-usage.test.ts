@@ -102,6 +102,24 @@ describe("GET /api/usage", () => {
         estimatedSavingsRatio: expect.any(Number),
         estimatedSavedTokens: expect.any(Number),
       });
+      expect(body.ultimateContext).toMatchObject({
+        active: expect.any(Boolean),
+        processedCalls: expect.any(Number),
+        reducedCalls: expect.any(Number),
+        estimatedBeforeTokens: expect.any(Number),
+        estimatedReturnedTokens: expect.any(Number),
+        estimatedSavedTokens: expect.any(Number),
+        estimatedSavingsRatio: expect.any(Number),
+        retrievalCalls: expect.any(Number),
+        cacheHits: expect.any(Number),
+        sourceIncompleteCalls: expect.any(Number),
+        errors: expect.any(Number),
+        addedLatencyMs: expect.any(Number),
+        layers: {
+          linuxMcp: expect.any(Object),
+          allTools: expect.any(Object),
+        },
+      });
       expect(body).not.toHaveProperty("mcpTelemetry");
       expect(body).not.toHaveProperty("mcpControlledBenchmark");
       expect(Array.isArray(body.days)).toBe(true);

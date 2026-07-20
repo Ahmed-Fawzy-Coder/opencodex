@@ -422,6 +422,11 @@ export interface OcxConfig {
   providerContextCaps?: Record<string, number>;
   /** Global Codex-visible context cap value (tokens). Falls back to DEFAULT_PROVIDER_CONTEXT_CAP. */
   contextCapValue?: number;
+  /**
+   * Opt-in universal tool-result compaction with a local reversible snapshot store.
+   * Disabled when absent or when `enabled` is not true, preserving historical wire behavior.
+   */
+  ultimateContext?: OcxUltimateContextConfig;
   /** Bind hostname. Default "127.0.0.1" (loopback only). Set "0.0.0.0" to expose on all interfaces. */
   hostname?: string;
   /**
@@ -475,6 +480,18 @@ export interface OcxConfig {
   tokenGuardian?: OcxTokenGuardianConfig;
   /** Additional origins allowed for CORS (e.g. ["https://clisu-oracle.tail19a2d7.ts.net"]). Loopback origins are always allowed. */
   corsAllowOrigins?: string[];
+}
+
+export interface OcxUltimateContextConfig {
+  enabled?: boolean;
+  /** off = no-op, auto = compact results at/above thresholdBytes, compact = compact every result. */
+  mode?: "off" | "auto" | "compact";
+  thresholdBytes?: number;
+  previewBytes?: number;
+  ttlMs?: number;
+  maxEntries?: number;
+  maxBytes?: number;
+  retrievalMaxBytes?: number;
 }
 
 export type OcxComboStrategy = "failover" | "round-robin";

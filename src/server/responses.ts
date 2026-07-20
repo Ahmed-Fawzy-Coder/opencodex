@@ -69,6 +69,7 @@ import type { WsData } from "./ws-bridge";
 import { registerTurn, trackStreamLifetime, unregisterTurn } from "./lifecycle";
 import { redactSecretString } from "../lib/redact";
 import { readBoundedResponseBody } from "../lib/bounded-body";
+import { applyUltimateContextInPlace } from "../context-results";
 import {
   beginRequestAttempt,
   catalogModelSupportsServiceTier,
@@ -768,6 +769,16 @@ export async function handleResponses(
       console.warn(
         `[opencodex] rewrote ${rewritten} plaintext encrypted_content part(s) to input_text (spawn-message compatibility)`,
       );
+  }
+
+  // Ultimate Context operates on the same sanitized raw input consumed by both routed
+  // adapters and native passthrough. It is opt-in and therefore a strict no-op by default.
+  // Running here (before parseRequest) gives every backend the same compacted tool-result view.
+  try {
+    applyUltimateContextInPlace(body, config.ultimateContext);
+  } catch (error) {
+    // Context compaction is an optimization: storage failures must not fail an otherwise valid turn.
+    console.warn(`[opencodex] Ultimate Context bypassed after a local store error: ${error instanceof Error ? error.message : "unknown error"}`);
   }
 
   let parsed;
