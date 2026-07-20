@@ -103,6 +103,11 @@ after one retry, the model may use a nested fallback such as `tools.exec_command
 `exec.ALL_TOOLS` catalog. Set the option to `false` only when intentionally testing the top-level
 native fallback.
 
+For a sanitized enforcement trace during diagnosis, start OpenCodex with
+`OPENCODEX_LINUX_MCP_DEBUG=1`. Trace lines include only provider/model identity, enforcement status,
+tool type/name pairs, and boolean classifications of upstream tool calls; request content, tool
+arguments, descriptions, headers, and secrets are never logged.
+
 `auto` preserves small results and reduces only results at or above the threshold. `off` is the immediate kill switch. `compact` forces every eligible textual result through the reversible store and is intended for testing, not the global default.
 
 OpenCodex also bounds its in-memory Responses continuation cache to 32 MiB by default and evicts

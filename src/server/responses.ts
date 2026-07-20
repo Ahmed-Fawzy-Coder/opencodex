@@ -109,6 +109,136 @@ export function buildToolBridgeMaps(parsed: OcxParsedRequest): {
   return { toolNsMap, freeformToolNames, toolSearchToolNames };
 }
 
+type SanitizedToolSpec = { type: string | null; name: string | null };
+
+function linuxMcpTraceEnabled(): boolean {
+  return process.env.OPENCODEX_LINUX_MCP_DEBUG === "1";
+}
+
+function sanitizedRawToolSpecs(parsed: OcxParsedRequest): SanitizedToolSpec[] {
+  const raw = parsed._rawBody;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return [];
+  const body = raw as Record<string, unknown>;
+  const specs: unknown[] = Array.isArray(body.tools) ? [...body.tools] : [];
+  if (Array.isArray(body.input)) {
+    for (const item of body.input) {
+      if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+      const record = item as Record<string, unknown>;
+      if (record.type === "additional_tools" && Array.isArray(record.tools)) specs.push(...record.tools);
+    }
+  }
+  return specs.map(spec => {
+    if (!spec || typeof spec !== "object" || Array.isArray(spec)) return { type: null, name: null };
+    const record = spec as Record<string, unknown>;
+    return {
+      type: typeof record.type === "string" ? record.type : null,
+      name: typeof record.name === "string" ? record.name : null,
+    };
+  });
+}
+
+function traceLinuxMcpEnforcement(
+  route: { providerName: string; modelId: string },
+  enabled: boolean,
+  applied: boolean,
+  removedToolNames: string[],
+  parsedBefore: SanitizedToolSpec[],
+  rawBefore: SanitizedToolSpec[],
+  parsedAfter: SanitizedToolSpec[],
+  rawAfter: SanitizedToolSpec[],
+): void {
+  console.error(`[opencodex:linux-mcp] ${JSON.stringify({
+    stage: "enforcement",
+    provider: route.providerName,
+    model: route.modelId,
+    enabled,
+    applied,
+    removedToolNames,
+    parsedBefore,
+    rawBefore,
+    parsedAfter,
+    rawAfter,
+  })}`);
+}
+
+function sanitizedOutboundToolSpecs(body: string | undefined): SanitizedToolSpec[] {
+  if (!body) return [];
+  try {
+    const parsed = JSON.parse(body) as Record<string, unknown>;
+    if (!Array.isArray(parsed.tools)) return [];
+    return parsed.tools.map(spec => {
+      if (!spec || typeof spec !== "object" || Array.isArray(spec)) return { type: null, name: null };
+      const record = spec as Record<string, unknown>;
+      const fn = record.function && typeof record.function === "object" && !Array.isArray(record.function)
+        ? record.function as Record<string, unknown>
+        : undefined;
+      return {
+        type: typeof record.type === "string" ? record.type : null,
+        name: typeof record.name === "string"
+          ? record.name
+          : typeof fn?.name === "string" ? fn.name : null,
+      };
+    });
+  } catch {
+    return [];
+  }
+}
+
+function traceLinuxMcpOutboundCatalog(
+  route: { providerName: string; modelId: string },
+  body: string | undefined,
+): void {
+  console.error(`[opencodex:linux-mcp] ${JSON.stringify({
+    stage: "outbound_catalog",
+    provider: route.providerName,
+    model: route.modelId,
+    tools: sanitizedOutboundToolSpecs(body),
+  })}`);
+}
+
+async function* traceLinuxMcpAdapterEvents(
+  events: AsyncIterable<AdapterEvent>,
+  route: { providerName: string; modelId: string },
+  freeformToolNames: ReadonlySet<string>,
+): AsyncGenerator<AdapterEvent> {
+  const trace = linuxMcpToolCallTracer(route, freeformToolNames);
+  for await (const event of events) {
+    trace(event);
+    yield event;
+  }
+}
+
+function linuxMcpToolCallTracer(
+  route: { providerName: string; modelId: string },
+  freeformToolNames: ReadonlySet<string>,
+): (event: AdapterEvent) => void {
+  let current: { name: string; arguments: string } | null = null;
+  return event => {
+    if (event.type === "tool_call_start") {
+      current = { name: event.name, arguments: "" };
+      return;
+    }
+    if (event.type === "tool_call_delta" && current) {
+      current.arguments += event.arguments;
+      return;
+    }
+    if (event.type !== "tool_call_end" || !current) return;
+    const call = current;
+    current = null;
+    console.error(`[opencodex:linux-mcp] ${JSON.stringify({
+      stage: "upstream_tool_call",
+      provider: route.providerName,
+      model: route.modelId,
+      name: call.name,
+      freeform: freeformToolNames.has(call.name),
+      argumentChars: call.arguments.length,
+      invokesLinuxMcpGateway: call.arguments.includes("mcp__linux_mcp__workspace"),
+      invokesNestedExecCommand: call.arguments.includes("tools.exec_command"),
+      containsShellCat: /(?:\/bin\/bash|\bcat\s)/.test(call.arguments),
+    })}`);
+  };
+}
+
 /** Verbatim upstream Proactive text (codex-rs core/src/context/multi_agent_mode_instructions.rs). */
 const PROACTIVE_MULTI_AGENT_MODE_TEXT = [
   "Proactive multi-agent delegation is active.",
@@ -855,7 +985,31 @@ export async function handleResponses(
   // native read/search/shell competitors and inject a system-level invocation contract. Codex does
   // not enumerate exec.ALL_TOOLS in the wire spec; enforceLinuxMcp + freeform exec is the contract.
   // A turn without exec preserves the original catalog for recovery.
-  applyLinuxMcpEnforcement(parsed, route, config.enforceLinuxMcp !== false);
+  const linuxMcpEnabled = config.enforceLinuxMcp !== false;
+  const linuxMcpTrace = linuxMcpTraceEnabled();
+  const parsedToolsBefore = linuxMcpTrace
+    ? (parsed.context.tools ?? []).map(tool => ({
+        type: tool.freeform ? "custom" : tool.toolSearch ? "tool_search" : tool.namespace ? "namespaced_function" : "function",
+        name: tool.namespace ? `${tool.namespace}.${tool.name}` : tool.name,
+      }))
+    : [];
+  const rawToolsBefore = linuxMcpTrace ? sanitizedRawToolSpecs(parsed) : [];
+  const linuxMcpEnforcement = applyLinuxMcpEnforcement(parsed, route, linuxMcpEnabled);
+  if (linuxMcpTrace) {
+    traceLinuxMcpEnforcement(
+      route,
+      linuxMcpEnabled,
+      linuxMcpEnforcement.applied,
+      linuxMcpEnforcement.removedToolNames,
+      parsedToolsBefore,
+      rawToolsBefore,
+      (parsed.context.tools ?? []).map(tool => ({
+        type: tool.freeform ? "custom" : tool.toolSearch ? "tool_search" : tool.namespace ? "namespaced_function" : "function",
+        name: tool.namespace ? `${tool.namespace}.${tool.name}` : tool.name,
+      })),
+      sanitizedRawToolSpecs(parsed),
+    );
+  }
 
   // Fast mode override: when config.fastMode is explicitly set, inject or strip
   // service_tier for OpenAI-routed models. Undefined = passthrough (client decides).
@@ -1392,6 +1546,7 @@ export async function handleResponses(
   const connectMs = config.connectTimeoutMs ?? 200_000;
 
   const request = await adapter.buildRequest(parsed, { headers: selectedForwardHeaders });
+  if (linuxMcpTrace && linuxMcpEnforcement.applied) traceLinuxMcpOutboundCatalog(route, request.body);
   const inputTokenEstimate = typeof request.usageLog?.inputTokens === "number"
     ? request.usageLog.inputTokens
     : undefined;
@@ -1559,8 +1714,11 @@ export async function handleResponses(
   }
 
   if (parsed.stream) {
-    const eventStream = adapter.parseStream(upstreamResponse);
     const { toolNsMap, freeformToolNames, toolSearchToolNames } = buildToolBridgeMaps(parsed);
+    const parsedEventStream = adapter.parseStream(upstreamResponse);
+    const eventStream = linuxMcpTrace && linuxMcpEnforcement.applied
+      ? traceLinuxMcpAdapterEvents(parsedEventStream, route, freeformToolNames)
+      : parsedEventStream;
     const sseStream = bridgeToResponsesSSE(
       eventStream, parsed.modelId, toolNsMap, freeformToolNames, toolSearchToolNames,
       () => upstream.abort(), 2_000,
@@ -1591,6 +1749,10 @@ export async function handleResponses(
       cleanupUpstreamAbort();
     }
     const { toolNsMap, freeformToolNames, toolSearchToolNames } = buildToolBridgeMaps(parsed);
+    if (linuxMcpTrace && linuxMcpEnforcement.applied) {
+      const trace = linuxMcpToolCallTracer(route, freeformToolNames);
+      for (const event of events) trace(event);
+    }
     const json = buildResponseJSON(events, parsed.modelId, {
       hideThinkingSummary: parsed.options.hideThinkingSummary,
       toolNsMap,

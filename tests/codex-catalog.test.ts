@@ -339,13 +339,13 @@ describe("Codex catalog routed normalization", () => {
     }
   });
 
-  test("normalizeRoutedCatalogEntry strips native-only routed selectors", () => {
+  test("normalizeRoutedCatalogEntry selects code mode for Linux MCP but strips unrelated native selectors", () => {
     const entry = nativeTemplate();
 
     normalizeRoutedCatalogEntry(entry);
 
     expect(entry).not.toHaveProperty("model_messages");
-    expect(entry).not.toHaveProperty("tool_mode");
+    expect(entry.tool_mode).toBe("code_mode_only");
     expect(entry).not.toHaveProperty("multi_agent_version");
     expect(entry).not.toHaveProperty("use_responses_lite");
     expect(entry).not.toHaveProperty("supports_websockets");
@@ -365,7 +365,7 @@ describe("Codex catalog routed normalization", () => {
 
     expect(routed).toBeDefined();
     expect(routed).not.toHaveProperty("model_messages");
-    expect(routed).not.toHaveProperty("tool_mode");
+    expect(routed?.tool_mode).toBe("code_mode_only");
     // Routed entries do not inherit a native template's surface pin; the global
     // Codex v2 flag can choose the surface freely unless upstream pins the model.
     expect(routed).not.toHaveProperty("multi_agent_version");
@@ -380,6 +380,23 @@ describe("Codex catalog routed normalization", () => {
     expect(routed?.base_instructions).not.toBe(nativeTemplate().base_instructions);
     expect(routed?.base_instructions).toContain("claude-sonnet-4-6");
     expect(routed?.default_reasoning_level).toBe("medium");
+  });
+
+  test("routed catalog preserves the native tool surface on explicit Linux MCP opt-out", () => {
+    const entries = buildCatalogEntries(
+      nativeTemplate(),
+      [],
+      [{ provider: "deepseek", id: "deepseek-v4-pro", owned_by: "deepseek" }],
+      undefined,
+      false,
+      "default",
+      new Set(),
+      false,
+    );
+    const routed = entries.find(e => e.slug === "deepseek/deepseek-v4-pro");
+
+    expect(routed).toBeDefined();
+    expect(routed).not.toHaveProperty("tool_mode");
   });
   test("buildCatalogEntries advertises parallel tool calls only for Cursor routed models", () => {
     const entries = buildCatalogEntries(nativeTemplate(), [], [

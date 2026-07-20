@@ -207,6 +207,38 @@ describe("Codex catalog sync hardening", () => {
     expect(slugs).not.toContain("cursor/stale-model");
   });
 
+  test("sync toggles routed code mode with Linux MCP enforcement", () => {
+    const catalogPath = join(codexHome, "catalog.json");
+    writeFileSync(join(codexHome, "config.toml"), 'model_catalog_json = "catalog.json"\n', "utf8");
+    writeFileSync(catalogPath, JSON.stringify({
+      models: [nativeEntry("gpt-5.5", 0)],
+    }, null, 2) + "\n");
+
+    const syncWith = (enabled: boolean) => runScript(codexHome, opencodexHome, `
+      const { syncCatalogModels } = require("./src/codex/catalog");
+      syncCatalogModels({
+        enforceLinuxMcp: ${enabled},
+        providers: {
+          deepseek: {
+            adapter: "openai-chat",
+            baseUrl: "https://api.deepseek.com/v1",
+            liveModels: false,
+            models: ["deepseek-v4-pro"]
+          }
+        }
+      }).then(res => console.log(JSON.stringify(res)));
+    `);
+
+    expect(syncWith(true).status).toBe(0);
+    let models = JSON.parse(readFileSync(catalogPath, "utf8")).models as Array<Record<string, unknown>>;
+    expect(models.find(model => model.slug === "deepseek/deepseek-v4-pro")?.tool_mode).toBe("code_mode_only");
+
+    expect(syncWith(false).status).toBe(0);
+    models = JSON.parse(readFileSync(catalogPath, "utf8")).models as Array<Record<string, unknown>>;
+    expect(models.find(model => model.slug === "deepseek/deepseek-v4-pro")).not.toHaveProperty("tool_mode");
+    expect(models.find(model => model.slug === "gpt-5.5")).not.toHaveProperty("tool_mode");
+  });
+
   test("readCodexCatalogPath honors CODEX_HOME at call time", () => {
     const alternateHome = join(codexHome, "alternate-codex-home");
     mkdirSync(alternateHome, { recursive: true });

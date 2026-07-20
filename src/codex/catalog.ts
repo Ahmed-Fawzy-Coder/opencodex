@@ -506,9 +506,18 @@ function applyMultiAgentMode(entries: RawEntry[], mode: MultiAgentMode): RawEntr
   return entries;
 }
 
-export function normalizeRoutedCatalogEntry(entry: RawEntry, parallelToolCalls = false): RawEntry {
+export function normalizeRoutedCatalogEntry(
+  entry: RawEntry,
+  parallelToolCalls = false,
+  enforceLinuxMcp = true,
+): RawEntry {
   delete entry.model_messages;
-  delete entry.tool_mode;
+  // Codex chooses the model-visible local tool surface from catalog metadata before it builds the
+  // Responses request. code_mode_only registers the custom/freeform `exec` entrypoint whose nested
+  // ALL_TOOLS catalog owns Linux MCP. Without it, routed models receive flat exec_command/read/search
+  // tools and the server cannot safely redirect them after the client has already chosen a surface.
+  if (enforceLinuxMcp) entry.tool_mode = "code_mode_only";
+  else delete entry.tool_mode;
   delete entry.multi_agent_version;
   delete entry.use_responses_lite;
   delete entry.supports_websockets;
@@ -860,6 +869,7 @@ function deriveEntry(
   priority: number,
   model?: CatalogModel,
   exactComboSlugs: ReadonlySet<string> = new Set(),
+  enforceLinuxMcp = true,
 ): RawEntry {
   const preserveExact = isExactComboCatalogModel(model, exactComboSlugs);
   if (!slug.includes("/")) {
@@ -893,7 +903,7 @@ function deriveEntry(
         );
       }
       applyReasoningLevels(e, model?.reasoningEfforts, model?.defaultReasoningEffort, preserveExact);
-      normalizeRoutedCatalogEntry(e, model?.parallelToolCalls === true);
+      normalizeRoutedCatalogEntry(e, model?.parallelToolCalls === true, enforceLinuxMcp);
       if (model) applyJawcodeCatalogMetadata(e, model.provider, model.id, model.contextCap);
       applyCatalogModelMetadata(e, model);
     } else {
@@ -925,6 +935,7 @@ function deriveEntry(
   };
   if (slug.includes("/")) {
     applyReasoningLevels(entry, model?.reasoningEfforts, model?.defaultReasoningEffort, preserveExact);
+    if (enforceLinuxMcp) entry.tool_mode = "code_mode_only";
   }
   else {
     applyReasoningLevels(entry, isGpt56NativeSlug(slug) ? undefined : ["low", "medium", "high", "xhigh"]);
@@ -951,6 +962,7 @@ export function buildCatalogEntries(
   wsEnabled = false,
   multiAgentMode: MultiAgentMode = "default",
   exactComboSlugs: ReadonlySet<string> = new Set(),
+  enforceLinuxMcp = true,
 ): RawEntry[] {
   // Codex's models-manager sorts by `priority` ASC and advertises the first 5 picker-visible
   // models to spawn_agent (sort_by_key(priority) + MAX_MODEL_OVERRIDES_IN_SPAWN_AGENT=5). Catalog
@@ -976,6 +988,7 @@ export function buildCatalogEntries(
       5,
       m,
       exactComboSlugs,
+      enforceLinuxMcp,
     );
     // Featured picks may be stored raw (legacy) or encoded — honor both.
     const rankHit = rank.get(slug) ?? rank.get(`${m.provider}/${m.id}`);
@@ -1882,7 +1895,16 @@ export async function syncCatalogModels(config: OcxConfig): Promise<{ added: num
   const multiAgentMode: MultiAgentMode = config.multiAgentMode === "v1" || config.multiAgentMode === "v2" ? config.multiAgentMode : "default";
   const exactComboSlugs = exactComboCatalogSlugs(config);
   const hasPhysicalComboProvider = Object.hasOwn(config.providers, COMBO_NAMESPACE);
-  const goEntries = buildCatalogEntries(template ? JSON.parse(JSON.stringify(template)) : null, [], orderedGoModels, featured, websocketsEnabled(config), multiAgentMode, exactComboSlugs);
+  const goEntries = buildCatalogEntries(
+    template ? JSON.parse(JSON.stringify(template)) : null,
+    [],
+    orderedGoModels,
+    featured,
+    websocketsEnabled(config),
+    multiAgentMode,
+    exactComboSlugs,
+    config.enforceLinuxMcp !== false,
+  );
   // Keep genuine native entries (gpt-*, codex-*) with their real per-model fields and append
   // routed providers as namespaced slugs. Cursor and other adopted providers can expose model ids
   // like `gpt-5.5`; those must not delete the native OpenAI/Codex base row.
