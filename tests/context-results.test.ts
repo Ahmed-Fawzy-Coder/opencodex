@@ -90,6 +90,11 @@ describe("Ultimate Context transformer", () => {
     expect(compacted.action).toBe("mcp__linux_mcp__workspace:read_file");
     expect(compacted._context_result.snapshot_complete).toBe(true);
     expect(compacted._context_result.source_complete).toBe(false);
+    expect(compacted._context_result.manifest.handle).toBe(compacted._context_result.handle);
+    expect(compacted._context_result.manifest.etag).toBe(compacted._context_result.etag);
+    expect(compacted._context_result.manifest.sha256).toBe(compacted._context_result.sha256);
+    expect(compacted._context_result.manifest.suggested_length).toBe(65_536);
+    expect(compacted._context_result.retrieval_api.tool).toBe("get_context_result");
     expect(compacted.summary.content).toContain("_context_result.retrieval");
     expect(compacted._context_result.retrieval).toContain("ocx context get");
     expect(firstResult.savedBytes).toBeGreaterThan(0);
