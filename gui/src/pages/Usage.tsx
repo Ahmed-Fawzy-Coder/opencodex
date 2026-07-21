@@ -664,6 +664,7 @@ export default function Usage({ apiBase }: { apiBase: string }) {
   const [loading, setLoading] = useState(true);
   const [modelQuery, setModelQuery] = useState("");
   const [resetting, setResetting] = useState(false);
+  const [resetStatus, setResetStatus] = useState<{ kind: "success" | "error"; message: string } | null>(null);
 
   const fetchUsage = useCallback(async (nextRange: Range, nextSurface: UsageSurface, signal: AbortSignal) => {
     setLoading(true);
@@ -725,20 +726,40 @@ export default function Usage({ apiBase }: { apiBase: string }) {
             disabled={resetting}
             onClick={async () => {
               setResetting(true);
-              try { await fetch("/api/metrics/reset", { method: "POST" }); } catch {}
-              setSurface("all");
-              setRange("all");
-              const ctrl = new AbortController();
-              const res = await fetch(apiBase + "/api/usage?range=all&surface=all", { signal: ctrl.signal });
-              if (res.ok) setData(await res.json());
-              setResetting(false);
+              setResetStatus(null);
+              try {
+                const reset = await fetch(`${apiBase}/api/usage/reset`, { method: "POST" });
+                setSurface("all");
+                setRange("all");
+                const usage = await fetch(`${apiBase}/api/usage?range=all&surface=all`);
+                if (usage.ok) setData(await usage.json());
+                if (reset.ok) {
+                  setResetStatus({ kind: "success", message: t("usage.reset.success") });
+                } else {
+                  setResetStatus({ kind: "error", message: t("usage.reset.partial") });
+                }
+              } catch {
+                setResetStatus({ kind: "error", message: t("usage.reset.failed") });
+              } finally {
+                setResetting(false);
+              }
             }}
+            aria-label={t("usage.reset.label")}
             style={{ fontSize: "0.8rem", padding: "0.25rem 0.75rem" }}
           >
-            {resetting ? "..." : "↺ Reset statistics"}
+            {resetting ? t("usage.reset.resetting") : `↺ ${t("usage.reset.label")}`}
           </button>
         </div>
       </div>
+      {resetStatus && (
+        <p
+          className={resetStatus.kind === "error" ? "text-danger" : "muted"}
+          role={resetStatus.kind === "error" ? "alert" : "status"}
+          style={{ marginTop: 0 }}
+        >
+          {resetStatus.message}
+        </p>
+      )}
       <p className="page-sub">{t("usage.subtitle")}</p>
 
       {loading && !data ? (

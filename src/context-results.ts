@@ -767,8 +767,8 @@ export function applyUltimateContextInPlace(
     }
     const notModified = controls.if_none_match === stored.etag;
     const previewBytes = positiveInt(config.previewBytes, DEFAULT_PREVIEW_BYTES);
-    const compacted = notModified ? undefined : compactByAction(cleaned, action, previewBytes, controls.intent);
-    const payload = stableStringify({
+    let compacted = notModified ? undefined : compactByAction(cleaned, action, previewBytes, controls.intent);
+    const buildPayload = (summary: unknown): string => stableStringify({
       _context_result: {
         handle: stored.handle,
         etag: stored.etag,
@@ -797,10 +797,24 @@ export function applyUltimateContextInPlace(
         },
       },
       action,
-      ...(notModified ? {} : { summary: compacted }),
+      ...(notModified ? {} : { summary }),
     });
+    let payload = buildPayload(compacted);
+    let returnedBytes = Buffer.byteLength(payload, "utf-8");
+    if (!notModified && returnedBytes >= inputBytes) {
+      // Action-specific compactors preserve useful structure, but deeply nested metadata can
+      // exceed their nominal budget. Fall back to a hard-bounded snapshot preview.
+      compacted = previewText(snapshot, previewBytes, controls.intent);
+      payload = buildPayload(compacted);
+      returnedBytes = Buffer.byteLength(payload, "utf-8");
+    }
+    if (returnedBytes >= inputBytes) {
+      item.output = cleaned;
+      result.bypassedResults += 1;
+      result.returnedBytes += inputBytes;
+      continue;
+    }
     item.output = payload;
-    const returnedBytes = Buffer.byteLength(payload, "utf-8");
     result.transformedResults += 1;
     result.returnedBytes += returnedBytes;
     result.savedBytes += Math.max(0, inputBytes - returnedBytes);

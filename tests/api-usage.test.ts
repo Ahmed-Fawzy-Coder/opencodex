@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { saveConfig } from "../src/config";
 import { startServer } from "../src/server";
+import { handleManagementAPI } from "../src/server/management-api";
+import { readUsageEntries } from "../src/usage/log";
 import type { OcxConfig } from "../src/types";
 import { installIsolatedCodexHome, type IsolatedCodexHome } from "./helpers/isolated-codex-home";
 
@@ -225,5 +227,44 @@ describe("GET /api/usage", () => {
     } finally {
       await server.stop(true);
     }
+  });
+});
+
+describe("POST /api/usage/reset", () => {
+  test("archives local usage and reports all reset components", async () => {
+    writeFixture(Date.now());
+    const url = new URL("http://127.0.0.1/api/usage/reset");
+    const response = await handleManagementAPI(
+      new Request(url, { method: "POST" }),
+      url,
+      baseConfig(),
+      { resetLinuxMcpMetrics: async () => true },
+    );
+    expect(response?.status).toBe(200);
+    expect(await response?.json()).toMatchObject({
+      ok: true,
+      usage: { ok: true, archived: true, removedEntries: 3 },
+      ultimateContext: { ok: true },
+      linuxMcp: { ok: true },
+    });
+    expect(readUsageEntries()).toEqual([]);
+  });
+
+  test("returns a partial failure when Linux MCP cannot reset", async () => {
+    const url = new URL("http://127.0.0.1/api/usage/reset");
+    const response = await handleManagementAPI(
+      new Request(url, { method: "POST" }),
+      url,
+      baseConfig(),
+      { resetLinuxMcpMetrics: async () => false },
+    );
+    expect(response?.status).toBe(502);
+    expect(await response?.json()).toMatchObject({
+      ok: false,
+      usage: { ok: true },
+      ultimateContext: { ok: true },
+      linuxMcp: { ok: false },
+      error: "linux_mcp_reset_failed",
+    });
   });
 });

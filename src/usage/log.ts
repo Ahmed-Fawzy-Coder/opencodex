@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, appendFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, appendFileSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { getConfigDir } from "../config";
 import { usageDisplayTotalTokens } from "./totals";
@@ -253,4 +253,21 @@ export function readUsageEntries(): PersistedUsageEntry[] {
     }
   }
   return entries;
+}
+
+export function resetUsageEntries(): { archived: boolean; removedEntries: number } {
+  const path = usageLogPath();
+  if (!existsSync(path)) return { archived: false, removedEntries: 0 };
+
+  const removedEntries = readUsageEntries().length;
+  const stamp = Date.now();
+  let suffix = 0;
+  let archive = join(getConfigDir(), `usage-${stamp}.jsonl`);
+  while (existsSync(archive)) {
+    suffix += 1;
+    archive = join(getConfigDir(), `usage-${stamp}-${suffix}.jsonl`);
+  }
+  renameSync(path, archive);
+  try { chmodSync(archive, 0o600); } catch { /* best-effort on platforms that ignore chmod */ }
+  return { archived: true, removedEntries };
 }

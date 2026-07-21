@@ -72,7 +72,11 @@ export function summarizeUltimateContext(
   });
 
   const toolReturnedBytes = field(universalMetrics, "returnedBytes");
-  const toolBeforeBytes = Math.max(field(universalMetrics, "inputBytes"), toolReturnedBytes);
+  const toolSavedBytes = field(universalMetrics, "savedBytes");
+  // savedBytes is recorded only for transformations that actually shrink a result.
+  // Deriving it again from aggregate input/returned counters can be distorted by
+  // bypassed or legacy expanded transformations.
+  const toolBeforeBytes = toolReturnedBytes + toolSavedBytes;
   const toolBeforeTokens = estimatedTokens(toolBeforeBytes);
   const toolReturnedTokens = estimatedTokens(toolReturnedBytes);
   const allTools = layer({
@@ -81,7 +85,7 @@ export function summarizeUltimateContext(
     reducedCalls: field(universalMetrics, "transformedResults"),
     estimatedBeforeTokens: toolBeforeTokens,
     estimatedReturnedTokens: toolReturnedTokens,
-    estimatedSavedTokens: Math.max(0, toolBeforeTokens - toolReturnedTokens),
+    estimatedSavedTokens: estimatedTokens(toolSavedBytes),
     retrievalCalls: field(universalMetrics, "retrievals"),
     cacheHits: field(universalMetrics, "storeHits") + field(universalMetrics, "notModified"),
     sourceIncompleteCalls: 0,

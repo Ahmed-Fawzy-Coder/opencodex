@@ -16,6 +16,7 @@ describe("summarizeUltimateContext", () => {
       bypassedResults: 6,
       inputBytes: 800,
       returnedBytes: 200,
+      savedBytes: 600,
       retrievals: 1,
       storeHits: 2,
       notModified: 1,
@@ -73,6 +74,7 @@ describe("summarizeUltimateContext", () => {
       bypassedResults: -2,
       inputBytes: 10,
       returnedBytes: 20,
+      savedBytes: 0,
       errors: Number.POSITIVE_INFINITY,
     }, true);
 
@@ -82,5 +84,20 @@ describe("summarizeUltimateContext", () => {
     expect(summary.estimatedSavingsRatio).toBe(0);
     expect(summary.processedCalls).toBe(0);
     expect(summary.errors).toBe(0);
+  });
+
+  test("uses recorded savings instead of inferring them from legacy expanded results", () => {
+    const summary = summarizeUltimateContext(null, {
+      transformedResults: 2,
+      bypassedResults: 1,
+      inputBytes: 1_000,
+      returnedBytes: 1_100,
+      savedBytes: 200,
+    }, true);
+
+    expect(summary.layers.allTools.estimatedBeforeTokens).toBe(325);
+    expect(summary.layers.allTools.estimatedReturnedTokens).toBe(275);
+    expect(summary.layers.allTools.estimatedSavedTokens).toBe(50);
+    expect(summary.layers.allTools.estimatedSavingsRatio).toBeCloseTo(50 / 325);
   });
 });

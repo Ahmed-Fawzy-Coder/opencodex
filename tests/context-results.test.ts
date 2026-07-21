@@ -135,6 +135,45 @@ describe("Ultimate Context transformer", () => {
     expect(compacted.summary.content).not.toContain("private-source");
   });
 
+  test("never counts an expanded context envelope as a reduced result", () => {
+    const raw = JSON.stringify({
+      content: "x".repeat(300),
+      has_more: false,
+      truncated: false,
+    });
+    const value = body(raw, { mode: "compact" });
+
+    const result = applyUltimateContextInPlace(
+      value,
+      { enabled: true, mode: "compact", previewBytes: 10_000 },
+      store(),
+    );
+
+    expect(outputItem(value).output).toBe(raw);
+    expect(result.transformedResults).toBe(0);
+    expect(result.bypassedResults).toBe(1);
+    expect(result.returnedBytes).toBe(result.inputBytes);
+    expect(result.savedBytes).toBe(0);
+  });
+
+  test("falls back to a bounded snapshot preview when structured compaction expands", () => {
+    const raw = JSON.stringify(Object.fromEntries(
+      Array.from({ length: 200 }, (_, index) => [`metadata-${index}`, "value".repeat(20)]),
+    ));
+    const value = body(raw, { mode: "compact" });
+
+    const result = applyUltimateContextInPlace(
+      value,
+      { enabled: true, mode: "compact", previewBytes: 256 },
+      store(),
+    );
+
+    expect(result.transformedResults).toBe(1);
+    expect(result.returnedBytes).toBeLessThan(result.inputBytes);
+    expect(result.savedBytes).toBe(result.inputBytes - result.returnedBytes);
+    expect(typeof JSON.parse(outputItem(value).output).summary).toBe("string");
+  });
+
   test("fits the sanitize-then-transform-then-parse universal request pipeline", () => {
     const value = body(JSON.stringify({ ok: true, content: "result\n".repeat(2_000), has_more: false, truncated: false }));
     expect(sanitizeEncryptedContentInPlace(value.input)).toBe(0);

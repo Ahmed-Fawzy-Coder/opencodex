@@ -35,7 +35,7 @@ import { scanStorage } from "../storage/scanner";
 import { readUsageEntries } from "../usage/log";
 import { getUsageDebugLogEntries } from "../usage/debug";
 import { parseRange, parseUsageSurface, summarizeUsage } from "../usage/summary";
-import { readUltimateContextMetrics } from "../context-results";
+import { readUltimateContextMetrics, resetUltimateContextMetrics } from "../context-results";
 import { summarizeUltimateContext } from "../usage/ultimate-context";
 import { stripCodexRuntimeProviderFields } from "../codex/auth-context";
 import { getProviderRegistryEntry } from "../providers/registry";
@@ -52,7 +52,7 @@ import type { OcxClaudeCodeConfig, OcxConfig, OcxProviderConfig } from "../types
 import { drainAndShutdown } from "./lifecycle";
 import { filterRequestLogs, getRequestLogEntries, type RequestLogEntry } from "./request-log";
 import { estimateComboCost, estimateRequestCost, normalizeCostTokens, tokensPerSecond } from "../usage/cost";
-import type { PersistedUsageAttempt } from "../usage/log";
+import { resetUsageEntries, type PersistedUsageAttempt } from "../usage/log";
 import { isAllowedRequestOrigin, jsonResponse, providerManagementConfigError, publicProviderBaseUrl, safeConfigDTO } from "./auth-cors";
 import { applySystemEnvToggle } from "./system-env";
 
@@ -128,6 +128,24 @@ async function fetchLinuxMcpTelemetry(range: string): Promise<Record<string, unk
   }
 }
 
+async function resetLinuxMcpMetrics(): Promise<boolean> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 1_000);
+  try {
+    const response = await fetch("http://127.0.0.1:8000/metrics/reset", {
+      method: "POST",
+      signal: controller.signal,
+    });
+    if (!response.ok) return false;
+    const body = await response.json() as { ok?: unknown };
+    return body.ok === true;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 function linuxMcpEstimate(telemetry: Record<string, unknown> | null): Record<string, unknown> {
   return {
     active: telemetry !== null,
@@ -160,6 +178,7 @@ export interface ManagementApiDeps {
   clearThreadAccountMap?: () => void;
   clearProviderQuotaCache?: () => void;
   primeCodexPoolQuotas?: (config: OcxConfig, reason: string) => Promise<void> | void;
+  resetLinuxMcpMetrics?: () => Promise<boolean>;
 }
 
 /** Narrow an unknown JSON value to a plain (non-array) object for strict request-body validation. */
@@ -596,6 +615,23 @@ export async function handleManagementAPI(req: Request, url: URL, config: OcxCon
         ultimateContext: ultimateContextEstimate(telemetry, config),
         error: "read_failed",
       });
+    }
+  }
+
+  if (url.pathname === "/api/usage/reset" && req.method === "POST") {
+    try {
+      const usage = resetUsageEntries();
+      resetUltimateContextMetrics();
+      const linuxMcp = await (deps.resetLinuxMcpMetrics ?? resetLinuxMcpMetrics)();
+      return jsonResponse({
+        ok: linuxMcp,
+        usage: { ok: true, ...usage },
+        ultimateContext: { ok: true },
+        linuxMcp: { ok: linuxMcp },
+        ...(linuxMcp ? {} : { error: "linux_mcp_reset_failed" }),
+      }, linuxMcp ? 200 : 502, req, config);
+    } catch {
+      return jsonResponse({ ok: false, error: "usage_reset_failed" }, 500, req, config);
     }
   }
 

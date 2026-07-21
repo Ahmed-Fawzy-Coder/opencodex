@@ -72,7 +72,7 @@ The single **Ultimate Context** panel at `http://localhost:10100/#usage` shows l
 - processed and reduced results, retrievals, cache hits, and average added latency;
 - an optional Linux MCP versus other-tools breakdown.
 
-The panel never imports a fixed benchmark percentage and does not alter provider-reported `Total tokens`. Token estimates use `4 characters or bytes ≈ 1 token`. OpenCodex reads Linux MCP metrics with a short timeout; a telemetry failure cannot fail the Usage page.
+`Reduced` counts only transformations whose final envelope is smaller than the original result. If structured compaction does not save bytes, OpenCodex tries a hard-bounded text preview and otherwise returns the original result as bypassed. The panel never imports a fixed benchmark percentage and does not alter provider-reported `Total tokens`. Token estimates use `4 characters or bytes ≈ 1 token`. OpenCodex reads Linux MCP metrics with a short timeout; a telemetry failure cannot fail the Usage page.
 
 The Usage page does not poll automatically. Reload it manually or change the `7d`, `30d`, or `All` filter when you want fresh statistics.
 
@@ -341,18 +341,13 @@ The Ultimate Context panel remains available even before provider usage is recor
 
 ### Reset Usage and Linux MCP statistics
 
-This permanently removes the local statistics. Stop both writers before deleting their files:
+Use **Reset statistics** on the Usage page, or call the combined endpoint:
 
 ```bash
-systemctl --user stop opencodex-proxy.service
-systemctl --user stop linux-mcp.service linux-mcp.socket
-rm -- ~/.opencodex/usage.jsonl
-rm -- ~/.opencodex/ultimate-context-metrics.json
-rm -rf -- ~/.opencodex/context-results
-rm -- /absolute/path/to/linux_mcp/mcp_server/audit.log
-systemctl --user start linux-mcp.socket linux-mcp.service
-systemctl --user start opencodex-proxy.service
+curl -X POST 'http://127.0.0.1:10100/api/usage/reset'
 ```
+
+The reset archives the OpenCodex usage log, clears Ultimate Context counters, and asks Linux MCP to archive and reset its telemetry. Stored context results remain available because they are retrieval data, not usage statistics. A Linux MCP failure is returned as a partial reset instead of being silently ignored.
 
 Verify the reset:
 
