@@ -41,6 +41,10 @@ export interface UltimateContextMetrics {
   storeRejected: number;
   retrievals: number;
   retrievalBytes: number;
+  modelRequestedRetrievals: number;
+  automaticRetrievals: number;
+  retrievalNoProgress: number;
+  answersWithIncompleteSource: number;
   notModified: number;
   invalidHandles: number;
   expiredEntries: number;
@@ -63,6 +67,10 @@ const metrics: UltimateContextMetrics = {
   storeRejected: 0,
   retrievals: 0,
   retrievalBytes: 0,
+  modelRequestedRetrievals: 0,
+  automaticRetrievals: 0,
+  retrievalNoProgress: 0,
+  answersWithIncompleteSource: 0,
   notModified: 0,
   invalidHandles: 0,
   expiredEntries: 0,
@@ -732,6 +740,11 @@ export function applyUltimateContextInPlace(
     const mode = controls.mode ?? config.mode ?? "auto";
     const action = calls.get(item.call_id) ?? "unknown";
     if (mode === "off" || action.toLowerCase().includes("get_context_result") || isContextStub(item.output)) {
+      if (action.toLowerCase().includes("get_context_result")) {
+        metrics.modelRequestedRetrievals += 1;
+        const parsed = typeof item.output === "string" ? (() => { try { return JSON.parse(item.output) as Record<string, unknown>; } catch { return {}; } })() : {};
+        if (parsed.not_modified === true || parsed.has_more === false) metrics.retrievalNoProgress += 1;
+      }
       result.bypassedResults += 1;
       continue;
     }
@@ -765,7 +778,17 @@ export function applyUltimateContextInPlace(
         source_complete: sourceComplete(action, cleaned),
         not_modified: notModified,
         expires_at: stored.expiresAt,
-        retrieval: `run_command: ocx context get ${stored.handle} --offset 0 --max-bytes ${positiveInt(config.retrievalMaxBytes, DEFAULT_RETRIEVAL_MAX_BYTES)}`,
+        manifest: {
+          handle: stored.handle,
+          etag: stored.etag,
+          sha256: stored.sha256,
+          source_complete: sourceComplete(action, cleaned),
+          omitted: ["full_output", "unbounded_nested_values"],
+          suggested_offset: 0,
+          suggested_length: positiveInt(config.retrievalMaxBytes, DEFAULT_RETRIEVAL_MAX_BYTES),
+          reason: sourceComplete(action, cleaned) ? "details_available_on_demand" : "source_incomplete_or_truncated",
+        },
+        retrieval: `get_context_result(context_id=${stored.handle}, offset=0, length=${positiveInt(config.retrievalMaxBytes, DEFAULT_RETRIEVAL_MAX_BYTES)})`,
       },
       action,
       ...(notModified ? {} : { summary: compacted }),
