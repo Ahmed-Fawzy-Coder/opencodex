@@ -284,15 +284,22 @@ function UsageFilters({
 
 function UsageSummaryCards({
   summary,
+  ultimateContext,
   activeDays,
   locale,
   t,
 }: {
   summary: UsageSummaryTotals;
+  ultimateContext?: UltimateContextEstimate;
   activeDays: number;
   locale: Locale;
   t: TFn;
 }) {
+  const estimatedSavedTokens = ultimateContext?.estimatedSavedTokens ?? 0;
+  const estimatedBeforeTokens = summary.totalTokens + estimatedSavedTokens;
+  const estimatedSavingsRatio = estimatedBeforeTokens > 0
+    ? estimatedSavedTokens / estimatedBeforeTokens
+    : 0;
   return (
     <>
     <div className="usage-cards usage-cards-3x2" role="group" aria-label={t("usage.title")}>
@@ -311,6 +318,32 @@ function UsageSummaryCards({
       <div className="stat"><div className="muted">{t("usage.card.coverage")}</div><div className="stat-value">{formatPct(summary.coverageRatio)}</div></div>
       <div className="stat"><div className="muted">{t("usage.card.activeDays")}</div><div className="stat-value">{activeDays}</div></div>
     </div>
+      {ultimateContext && (
+        <section className="panel usage-total-savings" aria-labelledby="usage-total-savings-title">
+          <div className="usage-total-savings-copy">
+            <h3 id="usage-total-savings-title" className="panel-title">{t("usage.totalSavings.title")}</h3>
+            <p className="muted text-caption">{t("usage.totalSavings.note")}</p>
+          </div>
+          <div className="usage-total-savings-rate">
+            <span className="muted">{t("usage.totalSavings.rate")}</span>
+            <strong>{formatPct(estimatedSavingsRatio)}</strong>
+          </div>
+          <dl className="usage-total-savings-tokens">
+            <div>
+              <dt>{t("usage.totalSavings.before")}</dt>
+              <dd>{formatTokens(estimatedBeforeTokens, locale)}</dd>
+            </div>
+            <div>
+              <dt>{t("usage.totalSavings.after")}</dt>
+              <dd>{formatTokens(summary.totalTokens, locale)}</dd>
+            </div>
+            <div>
+              <dt>{t("usage.totalSavings.saved")}</dt>
+              <dd>{formatTokens(estimatedSavedTokens, locale)}</dd>
+            </div>
+          </dl>
+        </section>
+      )}
       {summary.estimatedCostUsd !== undefined && (
         <div className="usage-cost-row" role="note">
           <span className="muted">{t("usage.cost.total")}</span>
@@ -769,7 +802,7 @@ export default function Usage({ apiBase }: { apiBase: string }) {
       ) : (
         <>
           {data.summary.requests > 0 && (
-            <UsageSummaryCards summary={data.summary} activeDays={activeDays} locale={locale} t={t} />
+            <UsageSummaryCards summary={data.summary} ultimateContext={data.ultimateContext} activeDays={activeDays} locale={locale} t={t} />
           )}
           {data.ultimateContext && <UltimateContextCard estimate={data.ultimateContext} locale={locale} t={t} />}
           {data.summary.requests === 0 ? (

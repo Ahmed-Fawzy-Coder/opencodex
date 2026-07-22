@@ -897,6 +897,15 @@ button.prov-account-row.active { cursor: default; }
 .usage-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 8px; }
 .usage-cards .stat-value { font-size: var(--text-title); font-weight: var(--weight-semibold); margin-top: 4px; }
 .usage-context { margin-top: 16px; }
+.usage-total-savings { display: grid; grid-template-columns: minmax(190px, 1.15fr) minmax(120px, 0.55fr) minmax(0, 2fr); gap: 24px; align-items: center; margin-top: 16px; }
+.usage-total-savings-copy .panel-title { margin-bottom: 4px; }
+.usage-total-savings-copy p { margin: 0; max-width: 48ch; }
+.usage-total-savings-rate { display: flex; flex-direction: column; gap: 4px; }
+.usage-total-savings-rate strong { color: var(--green); font-size: clamp(2rem, 4vw, 3rem); font-weight: var(--weight-semibold); line-height: 1; font-variant-numeric: tabular-nums; }
+.usage-total-savings-tokens { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin: 0; }
+.usage-total-savings-tokens div + div { border-inline-start: 1px solid var(--border); padding-inline-start: 18px; }
+.usage-total-savings-tokens dt { color: var(--muted); font-size: var(--text-label); }
+.usage-total-savings-tokens dd { margin: 5px 0 0; font-size: var(--text-title); font-weight: var(--weight-semibold); font-variant-numeric: tabular-nums; }
 .usage-context-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .usage-context-head .panel-title { margin-bottom: 4px; }
 .usage-context-note { margin: 0; max-width: 70ch; }
@@ -929,6 +938,8 @@ button.prov-account-row.active { cursor: default; }
 @media (max-width: 760px) {
   .usage-segmented-btn { min-height: var(--control-touch); }
   .usage-context-summary { grid-template-columns: 1fr; gap: 16px; }
+  .usage-total-savings { grid-template-columns: 1fr 1fr; }
+  .usage-total-savings-tokens { grid-column: 1 / -1; }
   .usage-context-tokens { gap: 12px; }
   .usage-context-tokens div + div { padding-inline-start: 12px; }
   .openai-mode-row { align-items: stretch; flex-direction: column; gap: 6px; }
@@ -939,6 +950,9 @@ button.prov-account-row.active { cursor: default; }
 @media (max-width: 640px) {
   .usage-source-btn .usage-source-label-collapsible { display: none; }
   .usage-context-tokens { grid-template-columns: 1fr; }
+  .usage-total-savings { grid-template-columns: 1fr; }
+  .usage-total-savings-tokens { grid-column: auto; grid-template-columns: 1fr; }
+  .usage-total-savings-tokens div + div { border-inline-start: 0; border-block-start: 1px solid var(--border); padding: 12px 0 0; }
   .usage-context-tokens div + div { border-inline-start: 0; border-block-start: 1px solid var(--border); padding: 12px 0 0; }
 }
 
